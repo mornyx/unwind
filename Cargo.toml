@@ -1,0 +1,18 @@
+[package]
+name = "unwind"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[dependencies]
+libc = "0.2.119"
+
+[dev-dependencies]
+backtrace = "0.3.64"
+
+[build-dependencies]
+cc = "1.0.73"
+
+[features]
+default = []
+compact-unwind-info = []

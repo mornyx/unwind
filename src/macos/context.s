@@ -1,0 +1,41 @@
+    .section __TEXT,__text
+    .globl _init_unwind_context
+_init_unwind_context:
+    stp    x0, x1,  [x0, #0x000]
+    stp    x2, x3,  [x0, #0x010]
+    stp    x4, x5,  [x0, #0x020]
+    stp    x6, x7,  [x0, #0x030]
+    stp    x8, x9,  [x0, #0x040]
+    stp    x10,x11, [x0, #0x050]
+    stp    x12,x13, [x0, #0x060]
+    stp    x14,x15, [x0, #0x070]
+    stp    x16,x17, [x0, #0x080]
+    stp    x18,x19, [x0, #0x090]
+    stp    x20,x21, [x0, #0x0A0]
+    stp    x22,x23, [x0, #0x0B0]
+    stp    x24,x25, [x0, #0x0C0]
+    stp    x26,x27, [x0, #0x0D0]
+    stp    x28,x29, [x0, #0x0E0]
+    str    x30,     [x0, #0x0F0]
+    mov    x1,sp
+    str    x1,      [x0, #0x0F8]
+    str    x30,     [x0, #0x100]    // store return address as pc
+    // skip cpsr
+    stp    d0, d1,  [x0, #0x110]
+    stp    d2, d3,  [x0, #0x120]
+    stp    d4, d5,  [x0, #0x130]
+    stp    d6, d7,  [x0, #0x140]
+    stp    d8, d9,  [x0, #0x150]
+    stp    d10,d11, [x0, #0x160]
+    stp    d12,d13, [x0, #0x170]
+    stp    d14,d15, [x0, #0x180]
+    stp    d16,d17, [x0, #0x190]
+    stp    d18,d19, [x0, #0x1A0]
+    stp    d20,d21, [x0, #0x1B0]
+    stp    d22,d23, [x0, #0x1C0]
+    stp    d24,d25, [x0, #0x1D0]
+    stp    d26,d27, [x0, #0x1E0]
+    stp    d28,d29, [x0, #0x1F0]
+    str    d30,     [x0, #0x200]
+    str    d31,     [x0, #0x208]
+    ret
