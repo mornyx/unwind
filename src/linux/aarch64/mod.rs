@@ -2,7 +2,6 @@ use gimli::Register;
 use std::ops::{Index, IndexMut};
 
 // See: https://developer.arm.com/documentation/ihi0057/b/
-const FP: u16 = 29;
 const RA: u16 = 30;
 const SP: u16 = 31;
 

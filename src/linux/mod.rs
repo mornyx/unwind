@@ -41,7 +41,7 @@ impl UnwindCursor<EndianSlice<'static, NativeEndian>> {
                     Some(v) => v,
                     None => return false,
                 };
-                return crate::dwarf::step(registers, row);
+                return crate::dwarf::step(registers, &row);
             }
         }
         false
