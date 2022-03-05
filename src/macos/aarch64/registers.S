@@ -1,6 +1,6 @@
     .section __TEXT,__text
-    .globl _init_unwind_context
-_init_unwind_context:
+    .globl _unwind_init_registers
+_unwind_init_registers:
     stp    x0, x1,  [x0, #0x000]
     stp    x2, x3,  [x0, #0x010]
     stp    x4, x5,  [x0, #0x020]

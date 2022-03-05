@@ -1,190 +1,16 @@
-use crate::UnwindContext;
-use std::mem;
-use std::slice;
+#![allow(dead_code)]
 
-#[derive(Debug)]
-pub struct UnwindCursor {
-    context: UnwindContext,
-    func_info: UnwindFuncInfo,
-    unwind_info_missing: bool,
-}
-
-impl UnwindCursor {
-    pub fn new(context: UnwindContext) -> Self {
-        let mut cursor = Self {
-            context,
-            func_info: UnwindFuncInfo::default(),
-            unwind_info_missing: false,
-        };
-        cursor.update_func_info_based_on_pc(false);
-        cursor
-    }
-
-    pub fn step(&mut self) -> Option<&UnwindContext> {
-        // Bottom of stack is defined is when unwind info cannot be found.
-        if self.unwind_info_missing {
-            return None;
-        }
-
-        // Use unwinding info to modify register set as if function returned.
-        let encoding = self.func_info.encoding;
-        let mode = encoding & UNWIND_ARM64_MODE_MASK;
-        match mode {
-            UNWIND_ARM64_MODE_FRAME => self.step_with_frame(encoding),
-            UNWIND_ARM64_MODE_FRAMELESS => self.step_with_frameless(encoding),
-            _ => {
-                // Err: invalid arm64 mode
-                return None;
-            }
-        };
-
-        // Update info based on new pc.
-        self.update_func_info_based_on_pc(true);
-        if self.unwind_info_missing {
-            return None;
-        }
-        Some(&self.context)
-    }
-
-    fn step_with_frame(&mut self, encoding: Encoding) {
-        self.restore_registers(encoding, self.context.fp - 8);
-        let fp = self.context.fp;
-        // fp points to old fp
-        self.context.fp = unsafe { *mem::transmute::<_, *const u64>(fp) };
-        // old sp is fp less saved fp and lr
-        self.context.sp = fp + 16;
-        // pop return address into pc
-        self.context.pc = unsafe { *mem::transmute::<_, *const u64>(fp + 8) };
-    }
-
-    fn step_with_frameless(&mut self, encoding: Encoding) {
-        let stack_size = 16 * ((encoding >> 12) & 0xFFF) as u64;
-        let loc = self.restore_registers(encoding, self.context.sp + stack_size);
-        // subtract stack size off of sp
-        self.context.sp = loc;
-        // set pc to be value in lr
-        self.context.pc = self.context.lr;
-    }
-
-    fn restore_registers(&mut self, encoding: Encoding, mut loc: u64) -> u64 {
-        let context = &mut self.context;
-        if encoding & UNWIND_ARM64_FRAME_X19_X20_PAIR != 0 {
-            context.x[19] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-            context.x[20] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_X21_X22_PAIR != 0 {
-            context.x[21] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-            context.x[22] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_X23_X24_PAIR != 0 {
-            context.x[23] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-            context.x[24] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_X25_X26_PAIR != 0 {
-            context.x[25] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-            context.x[26] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_X27_X28_PAIR != 0 {
-            context.x[27] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-            context.x[28] = unsafe { *mem::transmute::<_, *const u64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_D8_D9_PAIR != 0 {
-            context.d[8] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-            context.d[9] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_D10_D11_PAIR != 0 {
-            context.d[10] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-            context.d[11] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_D12_D13_PAIR != 0 {
-            context.d[12] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-            context.d[13] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-        }
-        if encoding & UNWIND_ARM64_FRAME_D14_D15_PAIR != 0 {
-            context.d[14] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-            context.d[15] = unsafe { *mem::transmute::<_, *const f64>(loc) };
-            loc -= 8;
-        }
-        loc
-    }
-
-    fn update_func_info_based_on_pc(&mut self, is_return_address: bool) {
-        let mut pc = self.context.pc as usize;
-
-        // Exit early if at the top of the stack.
-        if pc == 0 {
-            self.unwind_info_missing = true;
-            return;
-        }
-
-        // If the last line of a function is a "throw" the compiler sometimes
-        // emits no instructions after the call to __cxa_throw.  This means
-        // the return address is actually the start of the next function.
-        // To disambiguate this, back up the pc when we know it is a return
-        // address.
-        if is_return_address {
-            pc -= 1;
-        }
-
-        // Ask address space object to find unwind sections for this pc.
-        if let Some(sections) = DyldUnwindSections::find(pc) {
-            if sections.compact_unwind_section != 0 {
-                match UnwindFuncInfo::search(sections, pc) {
-                    Some(info) => self.func_info = info,
-                    None => {
-                        self.unwind_info_missing = true;
-                        return;
-                    }
-                }
-
-                // If unwind table has entry, but entry says there is no unwind info,
-                // record that we have no unwind info.
-                if self.func_info.encoding == 0 {
-                    self.unwind_info_missing = true;
-                }
-                return;
-            }
-        }
-        self.unwind_info_missing = true;
-    }
-}
+use std::{mem, slice};
 
 #[derive(Debug, Default)]
-struct UnwindFuncInfo {
-    func_start: usize,  // start address of function
-    func_end: usize,    // address after end of function
-    encoding: Encoding, // compact unwind encoding, or zero if none
-}
-
-impl std::fmt::Debug for UnwindFuncInfo {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "UnwindFuncInfo {{ func_start: {:#x}, func_end: {:#x}, encoding: {:#x} }}",
-            self.func_start, self.func_end, self.encoding
-        )
-    }
+pub struct UnwindFuncInfo {
+    pub start: usize,       // start address of function
+    pub end: usize,         // address after end of function
+    pub encoding: Encoding, // compact unwind encoding, or zero if none
 }
 
 impl UnwindFuncInfo {
-    fn search(sections: DyldUnwindSections, pc: usize) -> Option<UnwindFuncInfo> {
+    pub fn find(sections: DyldUnwindSections, pc: usize) -> Option<Self> {
         let base_address = sections.mach_header as usize;
         let section_address = sections.compact_unwind_section as usize;
 
@@ -196,7 +22,7 @@ impl UnwindFuncInfo {
 
         let indexes: &[UnwindInfoSectionHeaderIndexEntry] = unsafe {
             slice::from_raw_parts(
-                mem::transmute(section_address + header.index_section_offset as usize),
+                (section_address + header.index_section_offset as usize) as _,
                 header.index_count as _,
             )
         };
@@ -230,12 +56,12 @@ impl UnwindFuncInfo {
         let l1_function_offset = indexes[low].function_offset;
         let l1_next_page_function_offset = indexes[low + 1].function_offset as usize;
         let l2_address = section_address + indexes[low].second_level_pages_section_offset as usize;
-        let l2_kind = unsafe { *mem::transmute::<_, *const u32>(l2_address) };
+        let l2_kind = unsafe { *(l2_address as *const u32) };
         if l2_kind == UNWIND_SECOND_LEVEL_REGULAR {
             let l2_header = unsafe { mem::transmute::<_, &UnwindInfoRegularSecondLevelPageHeader>(l2_address) };
             let l2_indexes: &[UnwindInfoRegularSecondLevelEntry] = unsafe {
                 slice::from_raw_parts(
-                    mem::transmute(l2_address + l2_header.entry_page_offset as usize),
+                    (l2_address + l2_header.entry_page_offset as usize) as _,
                     l2_header.entry_count as _,
                 )
             };
@@ -254,7 +80,7 @@ impl UnwindFuncInfo {
                     } else if l2_indexes[mid + 1].function_offset > target_function_offset {
                         // next is too big, so we found it
                         low = mid;
-                        func_end = base_address + l2_indexes[low + 1].function_offset;
+                        func_end = base_address + l2_indexes[low + 1].function_offset as usize;
                         break;
                     } else {
                         low = mid + 1;
@@ -270,15 +96,15 @@ impl UnwindFuncInfo {
                 return None;
             }
             Some(UnwindFuncInfo {
-                func_start,
-                func_end,
+                start: func_start,
+                end: func_end,
                 encoding,
             })
         } else if l2_kind == UNWIND_SECOND_LEVEL_COMPRESSED {
             let l2_header = unsafe { mem::transmute::<_, &UnwindInfoCompressedSecondLevelPageHeader>(l2_address) };
             let l2_indexes: &[u32] = unsafe {
                 slice::from_raw_parts(
-                    mem::transmute(l2_address + l2_header.entry_page_offset as usize),
+                    (l2_address + l2_header.entry_page_offset as usize) as _,
                     l2_header.entry_count as _,
                 )
             };
@@ -320,7 +146,7 @@ impl UnwindFuncInfo {
                 // encoding is in common table in section header
                 unsafe {
                     let encodings_address = section_address + header.common_encodings_array_section_offset as usize;
-                    let encodings_ptr = mem::transmute::<_, *const Encoding>(encodings_address);
+                    let encodings_ptr = encodings_address as *const Encoding;
                     let encodings_len = header.common_encodings_array_count as usize;
                     let encodings = slice::from_raw_parts(encodings_ptr, encodings_len);
                     encodings[encoding_index as usize]
@@ -329,15 +155,15 @@ impl UnwindFuncInfo {
                 // encoding is in page specific table
                 unsafe {
                     let encodings_address = l2_address + l2_header.encodings_page_offset as usize;
-                    let encodings_ptr = mem::transmute::<_, *const Encoding>(encodings_address);
+                    let encodings_ptr = encodings_address as *const Encoding;
                     let encodings_len = l2_header.encodings_count as usize;
                     let encodings = slice::from_raw_parts(encodings_ptr, encodings_len);
                     encodings[(encoding_index - header.common_encodings_array_count) as usize]
                 }
             };
             Some(UnwindFuncInfo {
-                func_start,
-                func_end,
+                start: func_start,
+                end: func_end,
                 encoding,
             })
         } else {
@@ -348,17 +174,17 @@ impl UnwindFuncInfo {
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
-struct DyldUnwindSections {
-    mach_header: u64,
-    dwarf_section: u64,
-    dwarf_section_length: u64,
-    compact_unwind_section: u64,
-    compact_unwind_section_length: u64,
+#[derive(Debug, Default, Copy, Clone)]
+pub struct DyldUnwindSections {
+    pub mach_header: u64,
+    pub dwarf_section: u64,
+    pub dwarf_section_length: u64,
+    pub compact_unwind_section: u64,
+    pub compact_unwind_section_length: u64,
 }
 
 impl DyldUnwindSections {
-    fn find(address: usize) -> Option<Self> {
+    pub fn find(address: usize) -> Option<Self> {
         let mut sections = Self::default();
         unsafe {
             if _dyld_find_unwind_sections(address as _, &mut sections as _) {
@@ -375,15 +201,102 @@ extern "C" {
     fn _dyld_find_unwind_sections(address: *mut libc::c_void, sections: *mut DyldUnwindSections) -> bool;
 }
 
-// The compact unwind encoding is a 32-bit value which encoded in an
-// architecture specific way, which registers to restore from where, and how
-// to unwind out of the function.
-type Encoding = u32;
+//===----------------------------------------------------------------------===//
+//
+// Part of the LLVM Project, under the Apache License v2.0 with LLVM Exceptions.
+// See https://llvm.org/LICENSE.txt for license information.
+// SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+//
+//
+// Darwin's alternative to DWARF based unwind encodings.
+//
+//===----------------------------------------------------------------------===//
 
-// architecture independent bits
-const UNWIND_IS_NOT_FUNCTION_START: u32 = 0x80000000;
-const UNWIND_HAS_LSDA: u32 = 0x40000000;
-const UNWIND_PERSONALITY_MASK: u32 = 0x30000000;
+// Compilers can emit standard DWARF FDEs in the __TEXT,__eh_frame section
+// of object files. Or compilers can emit compact unwind information in
+// the __LD,__compact_unwind section.
+//
+// When the linker creates a final linked image, it will create a
+// __TEXT,__unwind_info section.  This section is a small and fast way for the
+// runtime to access unwind info for any given function.  If the compiler
+// emitted compact unwind info for the function, that compact unwind info will
+// be encoded in the __TEXT,__unwind_info section. If the compiler emitted
+// DWARF unwind info, the __TEXT,__unwind_info section will contain the offset
+// of the FDE in the __TEXT,__eh_frame section in the final linked image.
+//
+// Note: Previously, the linker would transform some DWARF unwind infos into
+//       compact unwind info.  But that is fragile and no longer done.
+
+// x86_64
+//
+// 1-bit: start
+// 1-bit: has lsda
+// 2-bit: personality index
+//
+// 4-bits: 0=old, 1=rbp based, 2=stack-imm, 3=stack-ind, 4=DWARF
+//  rbp based:
+//        15-bits (5*3-bits per reg) register permutation
+//        8-bits for stack offset
+//  frameless:
+//        8-bits stack size
+//        3-bits stack adjust
+//        3-bits register count
+//        10-bits register permutation
+//
+// For x86_64 there are four modes for the compact unwind encoding:
+// UNWIND_X86_64_MODE_RBP_FRAME:
+//    RBP based frame where RBP is push on stack immediately after return address,
+//    then RSP is moved to RBP. Thus, to unwind RSP is restored with the current
+//    EPB value, then RBP is restored by popping off the stack, and the return
+//    is done by popping the stack once more into the pc.
+//    All non-volatile registers that need to be restored must have been saved
+//    in a small range in the stack that starts RBP-8 to RBP-2040.  The offset/8
+//    is encoded in the UNWIND_X86_64_RBP_FRAME_OFFSET bits.  The registers saved
+//    are encoded in the UNWIND_X86_64_RBP_FRAME_REGISTERS bits as five 3-bit entries.
+//    Each entry contains which register to restore.
+// UNWIND_X86_64_MODE_STACK_IMMD:
+//    A "frameless" (RBP not used as frame pointer) function with a small
+//    constant stack size.  To return, a constant (encoded in the compact
+//    unwind encoding) is added to the RSP. Then the return is done by
+//    popping the stack into the pc.
+//    All non-volatile registers that need to be restored must have been saved
+//    on the stack immediately after the return address.  The stack_size/8 is
+//    encoded in the UNWIND_X86_64_FRAMELESS_STACK_SIZE (max stack size is 2048).
+//    The number of registers saved is encoded in UNWIND_X86_64_FRAMELESS_STACK_REG_COUNT.
+//    UNWIND_X86_64_FRAMELESS_STACK_REG_PERMUTATION constains which registers were
+//    saved and their order.
+// UNWIND_X86_64_MODE_STACK_IND:
+//    A "frameless" (RBP not used as frame pointer) function large constant
+//    stack size.  This case is like the previous, except the stack size is too
+//    large to encode in the compact unwind encoding.  Instead it requires that
+//    the function contains "subq $nnnnnnnn,RSP" in its prolog.  The compact
+//    encoding contains the offset to the nnnnnnnn value in the function in
+//    UNWIND_X86_64_FRAMELESS_STACK_SIZE.
+// UNWIND_X86_64_MODE_DWARF:
+//    No compact unwind encoding is available.  Instead the low 24-bits of the
+//    compact encoding is the offset of the DWARF FDE in the __eh_frame section.
+//    This mode is never used in object files.  It is only generated by the
+//    linker in final linked images which have only DWARF unwind info for a
+//    function.
+pub const UNWIND_X86_64_MODE_MASK: u32 = 0x0F000000;
+pub const UNWIND_X86_64_MODE_RBP_FRAME: u32 = 0x01000000;
+pub const UNWIND_X86_64_MODE_STACK_IMMD: u32 = 0x02000000;
+pub const UNWIND_X86_64_MODE_STACK_IND: u32 = 0x03000000;
+pub const UNWIND_X86_64_MODE_DWARF: u32 = 0x04000000;
+pub const UNWIND_X86_64_RBP_FRAME_REGISTERS: u32 = 0x00007FFF;
+pub const UNWIND_X86_64_RBP_FRAME_OFFSET: u32 = 0x00FF0000;
+pub const UNWIND_X86_64_FRAMELESS_STACK_SIZE: u32 = 0x00FF0000;
+pub const UNWIND_X86_64_FRAMELESS_STACK_ADJUST: u32 = 0x0000E000;
+pub const UNWIND_X86_64_FRAMELESS_STACK_REG_COUNT: u32 = 0x00001C00;
+pub const UNWIND_X86_64_FRAMELESS_STACK_REG_PERMUTATION: u32 = 0x000003FF;
+pub const UNWIND_X86_64_DWARF_SECTION_OFFSET: u32 = 0x00FFFFFF;
+pub const UNWIND_X86_64_REG_NONE: u32 = 0;
+pub const UNWIND_X86_64_REG_RBX: u32 = 1;
+pub const UNWIND_X86_64_REG_R12: u32 = 2;
+pub const UNWIND_X86_64_REG_R13: u32 = 3;
+pub const UNWIND_X86_64_REG_R14: u32 = 4;
+pub const UNWIND_X86_64_REG_R15: u32 = 5;
+pub const UNWIND_X86_64_REG_RBP: u32 = 6;
 
 // ARM64
 //
@@ -399,25 +312,7 @@ const UNWIND_PERSONALITY_MASK: u32 = 0x30000000;
 //        5-bits X reg pairs saved
 //  DWARF:
 //        24-bits offset of DWARF FDE in __eh_frame section
-
-const UNWIND_ARM64_MODE_MASK: u32 = 0x0F000000;
-const UNWIND_ARM64_MODE_FRAMELESS: u32 = 0x02000000;
-const UNWIND_ARM64_MODE_DWARF: u32 = 0x03000000;
-const UNWIND_ARM64_MODE_FRAME: u32 = 0x04000000;
-
-const UNWIND_ARM64_FRAME_X19_X20_PAIR: u32 = 0x00000001;
-const UNWIND_ARM64_FRAME_X21_X22_PAIR: u32 = 0x00000002;
-const UNWIND_ARM64_FRAME_X23_X24_PAIR: u32 = 0x00000004;
-const UNWIND_ARM64_FRAME_X25_X26_PAIR: u32 = 0x00000008;
-const UNWIND_ARM64_FRAME_X27_X28_PAIR: u32 = 0x00000010;
-const UNWIND_ARM64_FRAME_D8_D9_PAIR: u32 = 0x00000100;
-const UNWIND_ARM64_FRAME_D10_D11_PAIR: u32 = 0x00000200;
-const UNWIND_ARM64_FRAME_D12_D13_PAIR: u32 = 0x00000400;
-const UNWIND_ARM64_FRAME_D14_D15_PAIR: u32 = 0x00000800;
-
-const UNWIND_ARM64_FRAMELESS_STACK_SIZE_MASK: u32 = 0x00FFF000;
-const UNWIND_ARM64_DWARF_SECTION_OFFSET: u32 = 0x00FFFFFF;
-
+//
 // For arm64 there are three modes for the compact unwind encoding:
 // UNWIND_ARM64_MODE_FRAME:
 //    This is a standard arm64 prolog where FP/LR are immediately pushed on the
@@ -439,12 +334,38 @@ const UNWIND_ARM64_DWARF_SECTION_OFFSET: u32 = 0x00FFFFFF;
 //    This mode is never used in object files.  It is only generated by the
 //    linker in final linked images which have only DWARF unwind info for a
 //    function.
+pub const UNWIND_ARM64_MODE_MASK: u32 = 0x0F000000;
+pub const UNWIND_ARM64_MODE_FRAMELESS: u32 = 0x02000000;
+pub const UNWIND_ARM64_MODE_DWARF: u32 = 0x03000000;
+pub const UNWIND_ARM64_MODE_FRAME: u32 = 0x04000000;
+pub const UNWIND_ARM64_FRAME_X19_X20_PAIR: u32 = 0x00000001;
+pub const UNWIND_ARM64_FRAME_X21_X22_PAIR: u32 = 0x00000002;
+pub const UNWIND_ARM64_FRAME_X23_X24_PAIR: u32 = 0x00000004;
+pub const UNWIND_ARM64_FRAME_X25_X26_PAIR: u32 = 0x00000008;
+pub const UNWIND_ARM64_FRAME_X27_X28_PAIR: u32 = 0x00000010;
+pub const UNWIND_ARM64_FRAME_D8_D9_PAIR: u32 = 0x00000100;
+pub const UNWIND_ARM64_FRAME_D10_D11_PAIR: u32 = 0x00000200;
+pub const UNWIND_ARM64_FRAME_D12_D13_PAIR: u32 = 0x00000400;
+pub const UNWIND_ARM64_FRAME_D14_D15_PAIR: u32 = 0x00000800;
+pub const UNWIND_ARM64_FRAMELESS_STACK_SIZE_MASK: u32 = 0x00FFF000;
+pub const UNWIND_ARM64_DWARF_SECTION_OFFSET: u32 = 0x00FFFFFF;
+
+// architecture independent bits
+const UNWIND_IS_NOT_FUNCTION_START: u32 = 0x80000000;
+const UNWIND_HAS_LSDA: u32 = 0x40000000;
+const UNWIND_PERSONALITY_MASK: u32 = 0x30000000;
+const UNWIND_SECTION_VERSION: u32 = 1;
+const UNWIND_SECOND_LEVEL_REGULAR: u32 = 2;
+const UNWIND_SECOND_LEVEL_COMPRESSED: u32 = 3;
+
+// The compact unwind encoding is a 32-bit value which encoded in an
+// architecture specific way, which registers to restore from where, and how
+// to unwind out of the function.
+pub type Encoding = u32;
 
 // The __TEXT,__unwind_info section is laid out for an efficient two level lookup.
 // The header of the section contains a coarse index that maps function address
 // to the page (4096 byte block) containing the unwind info for that function.
-
-const UNWIND_SECTION_VERSION: u32 = 1;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -489,8 +410,6 @@ struct UnwindInfoRegularSecondLevelEntry {
     encoding: Encoding,
 }
 
-const UNWIND_SECOND_LEVEL_REGULAR: u32 = 2;
-
 #[repr(C)]
 #[derive(Debug)]
 struct UnwindInfoRegularSecondLevelPageHeader {
@@ -499,8 +418,6 @@ struct UnwindInfoRegularSecondLevelPageHeader {
     entry_count: u16,
     // entry array
 }
-
-const UNWIND_SECOND_LEVEL_COMPRESSED: u32 = 3;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -522,20 +439,4 @@ fn unwind_info_compressed_entry_func_offset(entry: u32) -> u32 {
 #[inline]
 fn unwind_info_compressed_entry_encoding_index(entry: u32) -> u16 {
     ((entry >> 24) as u16) & 0xFF
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_unwind_context() {
-        let context = unsafe {
-            let mut context = UnwindContext::default();
-            init_unwind_context(&mut context as _);
-            context
-        };
-        assert_ne!(context.pc, 0);
-        assert_ne!(context.fp, 0);
-    }
 }
