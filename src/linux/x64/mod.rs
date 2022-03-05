@@ -2,7 +2,7 @@ use gimli::{Register, X86_64};
 use std::ops::{Index, IndexMut};
 
 #[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct Registers {
     v: [u64; 128], // rax, rdx, rcx, rbx, rsi, rdi, rbp, rsp, r8~r15, rip, ...
 }
