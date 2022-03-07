@@ -3,6 +3,7 @@
 use crate::Registers;
 use gimli::{CfaRule, Reader, RegisterRule, UnwindTableRow};
 
+/// Restore `Registers` based on the rules in the `UnwindTableRow`.
 pub fn step<R: Reader>(registers: &mut Registers, row: &UnwindTableRow<R>) -> bool {
     let cfa = match *row.cfa() {
         CfaRule::RegisterAndOffset { register, offset } => registers[register].wrapping_add(offset as _),

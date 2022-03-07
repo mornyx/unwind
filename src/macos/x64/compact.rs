@@ -5,6 +5,7 @@ use gimli::{
 };
 use std::slice;
 
+/// Restore `Registers` based on the rules in the `UnwindFuncInfo.encoding`.
 pub fn step(
     registers: &mut Registers,
     info: UnwindFuncInfo,

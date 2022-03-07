@@ -1,9 +1,14 @@
+//! This module is currently not used, see comments in [UnwindCursor].
+//!
+//! [UnwindCursor]: crate::macos::aarch64::UnwindCursor
+
 #![allow(dead_code)]
 
 use crate::macos::compact::*;
 use crate::Registers;
 use gimli::{Reader, UnwindContext};
 
+/// Restore `Registers` based on the rules in the `UnwindFuncInfo.encoding`.
 pub fn step<R: Reader>(
     registers: &mut Registers,
     info: UnwindFuncInfo,

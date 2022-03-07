@@ -8,6 +8,7 @@ use std::slice;
 pub const MAX_OBJECTS_LEN: usize = 128;
 const PF_X: u32 = 1;
 
+/// Returns a [SectionInfo] list of all libraries dynamically loaded by the current process.
 pub fn find_sections() -> SmallVec<[SectionInfo<EndianSlice<'static, NativeEndian>>; MAX_OBJECTS_LEN]> {
     let mut data: SmallVec<[RawSectionInfo; MAX_OBJECTS_LEN]> = SmallVec::new();
     unsafe {
@@ -43,6 +44,7 @@ pub fn find_sections() -> SmallVec<[SectionInfo<EndianSlice<'static, NativeEndia
     sections
 }
 
+/// Parsed .eh_frame_hdr section.
 pub struct SectionInfo<R: Reader> {
     text: u64,
     text_len: u64,
@@ -52,11 +54,15 @@ pub struct SectionInfo<R: Reader> {
 }
 
 impl<R: Reader> SectionInfo<R> {
+    /// Determine whether the target address is in the current section.
     #[inline]
     pub fn contains(&self, target: u64) -> bool {
         target >= self.text && target - self.text < self.text_len
     }
 
+    /// Find the [UnwindTableRow] associated with the target address.
+    ///
+    /// [UnwindTableRow]: gimli::UnwindTableRow
     pub fn find_unwind_table_row(&self, ctx: &mut UnwindContext<R>, target: u64) -> Option<UnwindTableRow<R>> {
         let Self {
             eh_frame,
@@ -85,6 +91,7 @@ impl<R: Reader> SectionInfo<R> {
     }
 }
 
+// Raw address in virtual memory of .eh_frame_hdr section.
 #[derive(Default, Debug)]
 struct RawSectionInfo {
     text: u64,
@@ -130,5 +137,47 @@ extern "C" fn callback(info: *mut libc::dl_phdr_info, _size: libc::size_t, data:
             (*data).push(section);
         }
         0
+    }
+}
+
+#[test]
+mod tests {
+    use super::*;
+    use crate::Registers;
+    use gimli::UnwindContext;
+
+    #[test]
+    fn test_find_sections() {
+        let sections = find_sections();
+        assert!(sections.len() > 0);
+        assert!(sections.len() <= MAX_OBJECTS_LEN);
+        for section in &sections {
+            assert_ne!(section.text, 0);
+            assert_ne!(section.text_len, 0);
+            assert_ne!(section.eh_frame_hdr, 0);
+            assert_ne!(section.eh_frame_hdr_len, 0);
+            assert_ne!(section.max_addr, 0);
+        }
+    }
+
+    #[test]
+    fn test_find_unwind_table_row() {
+        let mut ctx = UnwindContext::new();
+        let mut registers = Registers::default();
+        unsafe {
+            unwind_init_registers(&mut registers as _);
+        }
+        let mut row = None;
+        let mut found = false;
+        let sections = find_sections();
+        for section in &sections {
+            if section.contains(registers.pc()) {
+                row = section.find_unwind_table_row(&mut ctx, registers.pc());
+                found = true;
+                break;
+            }
+        }
+        assert!(found);
+        assert!(row.is_some());
     }
 }

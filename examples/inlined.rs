@@ -1,29 +1,34 @@
 use unwind::{unwind_init_registers, Registers, UnwindCursor};
 
 fn main() {
-    func1_inlined();
+    let pcs = func1_inlined();
+
+    // Resolve addresses into symbols and display.
+    for pc in pcs {
+        println!("{:#x}:", pc);
+        backtrace::resolve(pc as _, |s| {
+            println!("    {:?}", s.name());
+        });
+    }
 }
 
 #[inline(always)]
-fn func1_inlined() {
-    func2();
+fn func1_inlined() -> Vec<u64> {
+    func2()
 }
 
-fn func2() {
+fn func2() -> Vec<u64> {
+    // Get the current register context.
     let mut registers = Registers::default();
     unsafe {
         unwind_init_registers(&mut registers as _);
     };
-    show(registers.pc());
+
+    // Do stack backtrace.
+    let mut pcs = vec![registers.pc()];
     let mut cursor = UnwindCursor::new();
     while cursor.step(&mut registers) {
-        show(registers.pc());
+        pcs.push(registers.pc());
     }
-}
-
-fn show(pc: u64) {
-    println!("{:#x}:", pc);
-    backtrace::resolve(pc as _, |s| {
-        println!("    {:?}", s.name());
-    });
+    pcs
 }

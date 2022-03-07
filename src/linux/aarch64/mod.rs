@@ -5,9 +5,43 @@ use std::ops::{Index, IndexMut};
 const RA: u16 = 30;
 const SP: u16 = 31;
 
+/// `Registers` holds the register context for a specific platform (OS+ISA).
+///
+/// We can use [unwind_init_registers] to initialize `Registers` based on
+/// the current execution context:
+/// ```ignore
+/// let mut registers = Registers::default();
+/// unsafe { unwind_init_registers(&mut registers as _) };
+/// assert_ne!(registers.pc(), 0);
+/// ```
+///
+/// But more suitable for this crate usage scenario is to use an existing
+/// `ucontext`. Usually the kernel provides an `ucontext` for the signal
+/// handler:
+/// ```ignore
+/// extern "C" fn signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucontext: *mut libc::c_void) {
+///     let registers = Registers::from_ucontext(ucontext);
+///     assert_ne!(registers.pc(), 0);
+/// }
+/// ```
+///
+/// We can restore `Registers` through [UnwindCursor] to get the execution
+/// context of the **parent** function:
+/// ```ignore
+/// let mut cursor = UnwindCursor::new();
+/// cursor.step(&mut registers);
+/// ```
+///
+/// [UnwindCursor]: crate::UnwindCursor
+/// [unwind_init_registers]: crate::unwind_init_registers
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Registers {
+    // 128 is enough for all registers on x86_64.
+    //
+    // Although we don't need to restore most of these registers, it is necessary
+    // to reserve space for them because we will index them numerically when restoring
+    // registers from DWARF information. Reserve enough space can avoid overflow.
     x: [u64; 128], // x0 ~ x30, sp, ...
 }
 
@@ -18,6 +52,7 @@ impl Default for Registers {
 }
 
 impl Registers {
+    /// Initialize `Registers` with value from `ucontext`.
     pub fn from_ucontext(ucontext: *mut libc::c_void) -> Option<Self> {
         let ucontext = ucontext as *mut libc::ucontext_t;
         if ucontext.is_null() {
@@ -32,21 +67,26 @@ impl Registers {
         Some(registers)
     }
 
+    /// Get the value of the PC (Program Counter) register.
+    /// This value is usually "Return Address" in implementation.
     #[inline]
     pub fn pc(&self) -> u64 {
         self[RA]
     }
 
+    /// Set the value of the PC (Program Counter) register.
     #[inline]
     pub fn set_pc(&mut self, v: u64) {
         self[RA] = v;
     }
 
+    /// Get the value of the SP (Stack Pointer) register.
     #[inline]
     pub fn sp(&self) -> u64 {
         self[SP]
     }
 
+    /// Set the value of the SP (Stack Pointer) register.
     #[inline]
     pub fn set_sp(&mut self, v: u64) {
         self[SP] = v;
@@ -78,33 +118,5 @@ impl Index<Register> for Registers {
 impl IndexMut<Register> for Registers {
     fn index_mut(&mut self, index: Register) -> &mut u64 {
         &mut self.x[index.0 as usize]
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGPROF};
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    static WAIT: AtomicBool = AtomicBool::new(true);
-
-    #[test]
-    fn test_from_ucontext() {
-        let h = SigHandler::SigAction(signal_handler);
-        let a = SigAction::new(h, SaFlags::SA_SIGINFO, SigSet::empty());
-        unsafe {
-            sigaction(SIGPROF, &a).unwrap();
-            libc::kill(libc::getpid(), libc::SIGPROF);
-        }
-        while WAIT.load(Ordering::SeqCst) {}
-    }
-
-    #[no_mangle]
-    extern "C" fn signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucontext: *mut libc::c_void) {
-        let registers = Registers::from_ucontext(ucontext).unwrap();
-        assert!(registers.pc() > 0);
-        assert!(registers.sp() > 0);
-        WAIT.store(false, Ordering::SeqCst);
     }
 }

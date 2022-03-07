@@ -4,9 +4,43 @@ use std::ops::{Index, IndexMut};
 
 mod compact;
 
+/// `Registers` holds the register context for a specific platform (OS+ISA).
+///
+/// We can use [unwind_init_registers] to initialize `Registers` based on
+/// the current execution context:
+/// ```ignore
+/// let mut registers = Registers::default();
+/// unsafe { unwind_init_registers(&mut registers as _) };
+/// assert_ne!(registers.pc(), 0);
+/// ```
+///
+/// But more suitable for this crate usage scenario is to use an existing
+/// `ucontext`. Usually the kernel provides an `ucontext` for the signal
+/// handler:
+/// ```ignore
+/// extern "C" fn signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucontext: *mut libc::c_void) {
+///     let registers = Registers::from_ucontext(ucontext);
+///     assert_ne!(registers.pc(), 0);
+/// }
+/// ```
+///
+/// We can restore `Registers` through [UnwindCursor] to get the execution
+/// context of the **parent** function:
+/// ```ignore
+/// let mut cursor = UnwindCursor::new();
+/// cursor.step(&mut registers);
+/// ```
+///
+/// [UnwindCursor]: crate::UnwindCursor
+/// [unwind_init_registers]: crate::unwind_init_registers
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Registers {
+    // 128 is enough for all registers on x86_64.
+    //
+    // Although we don't need to restore most of these registers, it is necessary
+    // to reserve space for them because we will index them numerically when restoring
+    // registers from DWARF information. Reserve enough space can avoid overflow.
     v: [u64; 128], // rax, rdx, rcx, rbx, rsi, rdi, rbp, rsp, r8~r15, rip, ...
 }
 
@@ -17,6 +51,7 @@ impl Default for Registers {
 }
 
 impl Registers {
+    /// Initialize `Registers` with value from `ucontext`.
     pub fn from_ucontext(ucontext: *mut libc::c_void) -> Option<Self> {
         let ucontext = ucontext as *mut libc::ucontext_t;
         if ucontext.is_null() {
@@ -49,21 +84,26 @@ impl Registers {
         }
     }
 
+    /// Get the value of the PC (Program Counter) register.
+    /// This value is usually "Return Address" in implementation.
     #[inline]
     pub fn pc(&self) -> u64 {
         self[X86_64::RA]
     }
 
+    /// Set the value of the PC (Program Counter) register.
     #[inline]
     pub fn set_pc(&mut self, v: u64) {
         self[X86_64::RA] = v;
     }
 
+    /// Get the value of the SP (Stack Pointer) register.
     #[inline]
     pub fn sp(&self) -> u64 {
         self[X86_64::RSP]
     }
 
+    /// Set the value of the SP (Stack Pointer) register.
     #[inline]
     pub fn set_sp(&mut self, v: u64) {
         self[X86_64::RSP] = v;
@@ -98,11 +138,18 @@ impl IndexMut<Register> for Registers {
     }
 }
 
+/// `UnwindCursor` is used to trace the stack with [Registers].
+///
+/// `UnwindCursor` is highly platform-dependent. On macOS+x86_64 we use
+/// a combination of "Compact Unwind Encoding" and "DWARF".
+///
+/// [Registers]: crate::Registers
 pub struct UnwindCursor<R: Reader> {
     ctx: UnwindContext<R>,
 }
 
 impl UnwindCursor<EndianSlice<'static, NativeEndian>> {
+    /// Creates a new `UnwindCursor`.
     #[inline]
     pub fn new() -> Self {
         Self {
@@ -110,13 +157,18 @@ impl UnwindCursor<EndianSlice<'static, NativeEndian>> {
         }
     }
 
+    /// Attempts to restore the parent function's register state based on the
+    /// current register state.
+    ///
+    /// On macOS we mostly use "Compact Unwind Encoding", but it may direct us
+    /// to use DWARF instead.
     pub fn step(&mut self, registers: &mut Registers) -> bool {
         let mut pc = registers.pc();
         if pc == 0 {
             return false;
         }
         pc -= 1;
-        if let Some(sections) = DyldUnwindSections::find(pc as _) {
+        if let Some(sections) = DyldUnwindSections::find(pc) {
             if sections.compact_unwind_section != 0 {
                 if let Some(info) = UnwindFuncInfo::find(sections, pc as _) {
                     if info.encoding == 0 {

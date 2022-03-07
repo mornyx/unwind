@@ -4,15 +4,15 @@ use std::{mem, slice};
 
 #[derive(Debug, Default)]
 pub struct UnwindFuncInfo {
-    pub start: usize,       // start address of function
-    pub end: usize,         // address after end of function
+    pub start: u64,         // start address of function
+    pub end: u64,           // address after end of function
     pub encoding: Encoding, // compact unwind encoding, or zero if none
 }
 
 impl UnwindFuncInfo {
-    pub fn find(sections: DyldUnwindSections, pc: usize) -> Option<Self> {
-        let base_address = sections.mach_header as usize;
-        let section_address = sections.compact_unwind_section as usize;
+    pub fn find(sections: DyldUnwindSections, pc: u64) -> Option<Self> {
+        let base_address = sections.mach_header;
+        let section_address = sections.compact_unwind_section;
 
         let header = unsafe { mem::transmute::<_, &UnwindInfoSectionHeader>(section_address) };
         if header.version != UNWIND_SECTION_VERSION {
@@ -22,7 +22,7 @@ impl UnwindFuncInfo {
 
         let indexes: &[UnwindInfoSectionHeaderIndexEntry] = unsafe {
             slice::from_raw_parts(
-                (section_address + header.index_section_offset as usize) as _,
+                (section_address + header.index_section_offset as u64) as _,
                 header.index_count as _,
             )
         };
@@ -54,14 +54,14 @@ impl UnwindFuncInfo {
         }
 
         let l1_function_offset = indexes[low].function_offset;
-        let l1_next_page_function_offset = indexes[low + 1].function_offset as usize;
-        let l2_address = section_address + indexes[low].second_level_pages_section_offset as usize;
+        let l1_next_page_function_offset = indexes[low + 1].function_offset as u64;
+        let l2_address = section_address + indexes[low].second_level_pages_section_offset as u64;
         let l2_kind = unsafe { *(l2_address as *const u32) };
         if l2_kind == UNWIND_SECOND_LEVEL_REGULAR {
             let l2_header = unsafe { mem::transmute::<_, &UnwindInfoRegularSecondLevelPageHeader>(l2_address) };
             let l2_indexes: &[UnwindInfoRegularSecondLevelEntry] = unsafe {
                 slice::from_raw_parts(
-                    (l2_address + l2_header.entry_page_offset as usize) as _,
+                    (l2_address + l2_header.entry_page_offset as u64) as _,
                     l2_header.entry_count as _,
                 )
             };
@@ -80,7 +80,7 @@ impl UnwindFuncInfo {
                     } else if l2_indexes[mid + 1].function_offset > target_function_offset {
                         // next is too big, so we found it
                         low = mid;
-                        func_end = base_address + l2_indexes[low + 1].function_offset as usize;
+                        func_end = base_address + l2_indexes[low + 1].function_offset as u64;
                         break;
                     } else {
                         low = mid + 1;
@@ -90,7 +90,7 @@ impl UnwindFuncInfo {
                 }
             }
             let encoding = l2_indexes[low].encoding;
-            let func_start = base_address + l2_indexes[low].function_offset as usize;
+            let func_start = base_address + l2_indexes[low].function_offset as u64;
             if pc < func_start || pc > func_end {
                 // Err: invalid func range
                 return None;
@@ -104,7 +104,7 @@ impl UnwindFuncInfo {
             let l2_header = unsafe { mem::transmute::<_, &UnwindInfoCompressedSecondLevelPageHeader>(l2_address) };
             let l2_indexes: &[u32] = unsafe {
                 slice::from_raw_parts(
-                    (l2_address + l2_header.entry_page_offset as usize) as _,
+                    (l2_address + l2_header.entry_page_offset as u64) as _,
                     l2_header.entry_count as _,
                 )
             };
@@ -128,12 +128,12 @@ impl UnwindFuncInfo {
                 }
             }
             let func_start = base_address
-                + l1_function_offset as usize
-                + unwind_info_compressed_entry_func_offset(l2_indexes[low]) as usize;
+                + l1_function_offset as u64
+                + unwind_info_compressed_entry_func_offset(l2_indexes[low]) as u64;
             let func_end = if low < last {
                 base_address
-                    + l1_function_offset as usize
-                    + unwind_info_compressed_entry_func_offset(l2_indexes[low + 1]) as usize
+                    + l1_function_offset as u64
+                    + unwind_info_compressed_entry_func_offset(l2_indexes[low + 1]) as u64
             } else {
                 base_address + l1_next_page_function_offset
             };
@@ -145,7 +145,7 @@ impl UnwindFuncInfo {
             let encoding = if encoding_index < header.common_encodings_array_count {
                 // encoding is in common table in section header
                 unsafe {
-                    let encodings_address = section_address + header.common_encodings_array_section_offset as usize;
+                    let encodings_address = section_address + header.common_encodings_array_section_offset as u64;
                     let encodings_ptr = encodings_address as *const Encoding;
                     let encodings_len = header.common_encodings_array_count as usize;
                     let encodings = slice::from_raw_parts(encodings_ptr, encodings_len);
@@ -154,7 +154,7 @@ impl UnwindFuncInfo {
             } else {
                 // encoding is in page specific table
                 unsafe {
-                    let encodings_address = l2_address + l2_header.encodings_page_offset as usize;
+                    let encodings_address = l2_address + l2_header.encodings_page_offset as u64;
                     let encodings_ptr = encodings_address as *const Encoding;
                     let encodings_len = l2_header.encodings_count as usize;
                     let encodings = slice::from_raw_parts(encodings_ptr, encodings_len);
@@ -184,7 +184,7 @@ pub struct DyldUnwindSections {
 }
 
 impl DyldUnwindSections {
-    pub fn find(address: usize) -> Option<Self> {
+    pub fn find(address: u64) -> Option<Self> {
         let mut sections = Self::default();
         unsafe {
             if _dyld_find_unwind_sections(address as _, &mut sections as _) {
@@ -439,4 +439,39 @@ fn unwind_info_compressed_entry_func_offset(entry: u32) -> u32 {
 #[inline]
 fn unwind_info_compressed_entry_encoding_index(entry: u32) -> u16 {
     ((entry >> 24) as u16) & 0xFF
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{unwind_init_registers, Registers};
+
+    #[test]
+    fn test_find_dyld_unwind_sections() {
+        let mut registers = Registers::default();
+        unsafe {
+            unwind_init_registers(&mut registers as _);
+        }
+        let sections = DyldUnwindSections::find(registers.pc());
+        assert!(sections.is_some());
+        let sections = sections.unwrap();
+        assert_ne!(sections.mach_header, 0);
+        assert_ne!(sections.compact_unwind_section, 0);
+        assert_ne!(sections.compact_unwind_section_length, 0);
+    }
+
+    #[test]
+    fn test_find_unwind_func_info() {
+        let mut registers = Registers::default();
+        unsafe {
+            unwind_init_registers(&mut registers as _);
+        }
+        let sections = DyldUnwindSections::find(registers.pc()).unwrap();
+        let info = UnwindFuncInfo::find(sections, registers.pc());
+        assert!(info.is_some());
+        let info = info.unwrap();
+        assert_ne!(info.start, 0);
+        assert_ne!(info.end, 0);
+        assert_ne!(info.encoding, 0);
+    }
 }
