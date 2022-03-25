@@ -1,35 +1,6 @@
 use gimli::{Register, X86_64};
 use std::ops::{Index, IndexMut};
 
-/// `Registers` holds the register context for a specific platform (OS+ISA).
-///
-/// We can use [unwind_init_registers] to initialize `Registers` based on
-/// the current execution context:
-/// ```ignore
-/// let mut registers = Registers::default();
-/// unsafe { unwind_init_registers(&mut registers as _) };
-/// assert_ne!(registers.pc(), 0);
-/// ```
-///
-/// But more suitable for this crate usage scenario is to use an existing
-/// `ucontext`. Usually the kernel provides an `ucontext` for the signal
-/// handler:
-/// ```ignore
-/// extern "C" fn signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucontext: *mut libc::c_void) {
-///     let registers = Registers::from_ucontext(ucontext);
-///     assert_ne!(registers.pc(), 0);
-/// }
-/// ```
-///
-/// We can restore `Registers` through [UnwindCursor] to get the execution
-/// context of the **parent** function:
-/// ```ignore
-/// let mut cursor = UnwindCursor::new();
-/// cursor.step(&mut registers);
-/// ```
-///
-/// [UnwindCursor]: crate::UnwindCursor
-/// [unwind_init_registers]: crate::unwind_init_registers
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Registers {

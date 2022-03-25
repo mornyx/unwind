@@ -27,7 +27,7 @@ fn func2() -> Vec<u64> {
     // Do stack backtrace.
     let mut pcs = vec![registers.pc()];
     let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers) {
+    while cursor.step(&mut registers).unwrap() {
         pcs.push(registers.pc());
     }
     pcs

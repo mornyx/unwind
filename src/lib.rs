@@ -16,7 +16,7 @@
 //!     // Do stack backtrace.
 //!     let mut pcs = vec![registers.pc()];
 //!     let mut cursor = UnwindCursor::new();
-//!     while cursor.step(&mut registers) {
+//!     while cursor.step(&mut registers).unwrap() {
 //!         pcs.push(registers.pc());
 //!     }
 //!
@@ -59,17 +59,21 @@
 //!
 //! For more examples, please refer to ../examples/.
 
+#[cfg(target_os = "macos")]
+mod compact;
+mod cursor;
 mod dwarf;
+mod dyld;
 mod registers;
+mod utils;
 
-pub use registers::*;
+pub use cursor::UnwindCursor;
+pub use registers::{unwind_init_registers, Registers};
 
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "linux")]
-pub use linux::*;
+pub type Result<T> = std::result::Result<T, Error>;
 
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "macos")]
-pub use macos::*;
+#[derive(thiserror::Error, Debug, Copy, Clone)]
+pub enum Error {
+    #[error("{0}")]
+    Dwarf(#[from] dwarf::DwarfError),
+}

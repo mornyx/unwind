@@ -1,15 +1,13 @@
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-const REGISTERS_FILE: &'static str = "src/linux/aarch64/registers.S";
-
-#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-const REGISTERS_FILE: &'static str = "src/linux/x64/registers.S";
-
-#[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-const REGISTERS_FILE: &'static str = "src/macos/aarch64/registers.S";
-
-#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-const REGISTERS_FILE: &'static str = "src/macos/x64/registers.S";
-
 fn main() {
-    cc::Build::new().file(REGISTERS_FILE).compile("registers");
+    let mut build = cc::Build::new();
+    build.file("src/registers/registers.S");
+    #[cfg(target_arch = "x86_64")]
+    build.define("UNWIND_ARCH_X86_64", "");
+    #[cfg(target_arch = "aarch64")]
+    build.define("UNWIND_ARCH_AARCH64", "");
+    #[cfg(target_os = "linux")]
+    build.define("UNWIND_OS_LINUX", "");
+    #[cfg(target_os = "macos")]
+    build.define("UNWIND_OS_MACOS", "");
+    build.compile("registers");
 }

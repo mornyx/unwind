@@ -1,10 +1,22 @@
-use crate::Registers;
+#[cfg(target_arch = "x86_64")]
+mod x64;
+#[cfg(target_arch = "x86_64")]
+pub use x64::*;
+
+#[cfg(target_arch = "aarch64")]
+mod aarch64;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::*;
+
+// Architecture independent register numbers.
+pub const UNW_REG_IP: usize = usize::MAX; // instruction pointer
+pub const UNW_REG_SP: usize = usize::MAX - 1; // stack pointer
 
 extern "C" {
     /// Get the register context of the current thread stack and save it in `Registers`.
     ///
     /// The implementation of this function is linked to the assembly code of different
-    /// platforms, such as: `src/linux/x64/registers.S`, `src/macos/aarch64/registers.S`.
+    /// platforms in `src/registers/registers.S`.
     ///
     /// The definition of `Registers` also varies with the OS and ISA.
     pub fn unwind_init_registers(registers: *mut Registers);

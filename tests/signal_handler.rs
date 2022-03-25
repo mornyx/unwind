@@ -25,6 +25,16 @@ fn test_unwind_in_signal_handler() {
         }
         vec.sort();
     }
+    unsafe {
+        setitimer(
+            libc::ITIMER_PROF,
+            &libc::itimerval {
+                it_interval: libc::timeval { tv_sec: 0, tv_usec: 0 },
+                it_value: libc::timeval { tv_sec: 0, tv_usec: 0 },
+            },
+            std::ptr::null_mut(),
+        );
+    }
 }
 
 fn frequency(v: i64) -> libc::itimerval {
@@ -47,9 +57,9 @@ extern "C" fn perf_signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucont
     let mut registers = Registers::from_ucontext(ucontext).unwrap();
     pcs.push(registers.pc());
     let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers) {
+    while cursor.step(&mut registers).unwrap() {
         pcs.push(registers.pc());
     }
-    assert!(pcs.len() > 1);
+    assert!(pcs.len() > 0);
     SAMPLE_COUNT.fetch_add(1, Ordering::SeqCst);
 }

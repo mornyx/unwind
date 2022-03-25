@@ -1,4 +1,4 @@
-use crate::macos::compact::*;
+use crate::compact::*;
 use crate::Registers;
 use gimli::{
     BaseAddresses, EhFrame, EhFrameOffset, EndianSlice, NativeEndian, UnwindContext, UnwindSection, UnwindTable, X86_64,
@@ -33,28 +33,24 @@ fn step_frame(registers: &mut Registers, encoding: Encoding) {
     // restore registers
     let mut saved_registers = registers[X86_64::RBP] - (8 * saved_registers_offset) as u64;
     for _ in 0..5 {
-        unsafe {
-            match saved_registers_locations & 0x7 {
-                UNWIND_X86_64_REG_NONE => {} // no register saved in this slot
-                UNWIND_X86_64_REG_RBX => registers[X86_64::RBX] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R12 => registers[X86_64::R12] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R13 => registers[X86_64::R13] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R14 => registers[X86_64::R14] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R15 => registers[X86_64::R15] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_RBP | _ => unreachable!(),
-            }
+        match saved_registers_locations & 0x7 {
+            UNWIND_X86_64_REG_NONE => {} // no register saved in this slot
+            UNWIND_X86_64_REG_RBX => registers[X86_64::RBX] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R12 => registers[X86_64::R12] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R13 => registers[X86_64::R13] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R14 => registers[X86_64::R14] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R15 => registers[X86_64::R15] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_RBP | _ => unreachable!(),
         }
         saved_registers += 8;
         saved_registers_locations = saved_registers_locations >> 3;
     }
 
     // frame unwind
-    unsafe {
-        let rbp = registers[X86_64::RBP];
-        registers[X86_64::RBP] = *(rbp as *const u64);
-        registers[X86_64::RSP] = rbp + 16;
-        registers[X86_64::RA] = *((rbp + 8) as *const u64)
-    }
+    let rbp = registers[X86_64::RBP];
+    registers[X86_64::RBP] = load::<u64>(rbp);
+    registers[X86_64::RSP] = rbp + 16;
+    registers[X86_64::RA] = load::<u64>(rbp + 8)
 }
 
 fn step_frameless(registers: &mut Registers, info: UnwindFuncInfo, imm: bool) {
@@ -76,7 +72,7 @@ fn step_frameless(registers: &mut Registers, info: UnwindFuncInfo, imm: bool) {
         stack_size_encoded * 8
     } else {
         // stack size is encoded in subl $xxx,%esp instruction
-        let subl = unsafe { *((info.start + stack_size_encoded as usize) as *const u32) };
+        let subl = load::<u32>(info.start + stack_size_encoded as u64);
         subl + 8 * stack_adjust
     };
 
@@ -153,27 +149,24 @@ fn step_frameless(registers: &mut Registers, info: UnwindFuncInfo, imm: bool) {
     // restore registers
     let mut saved_registers = registers[X86_64::RSP] + stack_size as u64 - 8 - 8 * reg_count as u64;
     for n in 0..(reg_count as usize) {
-        unsafe {
-            match register_saved[n] {
-                UNWIND_X86_64_REG_RBX => registers[X86_64::RBX] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R12 => registers[X86_64::R12] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R13 => registers[X86_64::R13] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R14 => registers[X86_64::R14] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_R15 => registers[X86_64::R15] = *(saved_registers as *const u64),
-                UNWIND_X86_64_REG_RBP => registers[X86_64::RBP] = *(saved_registers as *const u64),
-                _ => unreachable!(),
-            }
+        match register_saved[n] {
+            UNWIND_X86_64_REG_RBX => registers[X86_64::RBX] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R12 => registers[X86_64::R12] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R13 => registers[X86_64::R13] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R14 => registers[X86_64::R14] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_R15 => registers[X86_64::R15] = load::<u64>(saved_registers),
+            UNWIND_X86_64_REG_RBP => registers[X86_64::RBP] = load::<u64>(saved_registers),
+            _ => unreachable!(),
         }
         saved_registers += 8;
     }
 
     // frameless unwind
-    unsafe {
-        // return address is on stack after last saved register
-        registers[X86_64::RA] = *(saved_registers as *const u64);
-        // old rsp is before return address
-        registers[X86_64::RSP] = *((saved_registers + 8) as *const u64);
-    }
+
+    // return address is on stack after last saved register
+    registers[X86_64::RA] = load::<u64>(saved_registers);
+    // old rsp is before return address
+    registers[X86_64::RSP] = load::<u64>(saved_registers + 8);
 }
 
 fn step_dwarf(

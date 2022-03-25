@@ -1,6 +1,18 @@
 #![allow(dead_code)]
 
+use crate::dyld::DyldUnwindSections;
+use crate::utils::load;
 use std::{mem, slice};
+
+#[cfg(target_arch = "x86_64")]
+mod x64;
+#[cfg(target_arch = "x86_64")]
+pub use x64::*;
+
+#[cfg(target_arch = "aarch64")]
+mod aarch64;
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::*;
 
 #[derive(Debug, Default)]
 pub struct UnwindFuncInfo {
@@ -10,10 +22,7 @@ pub struct UnwindFuncInfo {
 }
 
 impl UnwindFuncInfo {
-    pub fn find(sections: DyldUnwindSections, pc: u64) -> Option<Self> {
-        let base_address = sections.mach_header;
-        let section_address = sections.compact_unwind_section;
-
+    pub fn find(pc: u64, section_address: u64, base_address: u64) -> Option<Self> {
         let header = unsafe { mem::transmute::<_, &UnwindInfoSectionHeader>(section_address) };
         if header.version != UNWIND_SECTION_VERSION {
             // Err: invalid version of section header
@@ -56,7 +65,7 @@ impl UnwindFuncInfo {
         let l1_function_offset = indexes[low].function_offset;
         let l1_next_page_function_offset = indexes[low + 1].function_offset as u64;
         let l2_address = section_address + indexes[low].second_level_pages_section_offset as u64;
-        let l2_kind = unsafe { *(l2_address as *const u32) };
+        let l2_kind = load::<u32>(l2_address);
         if l2_kind == UNWIND_SECOND_LEVEL_REGULAR {
             let l2_header = unsafe { mem::transmute::<_, &UnwindInfoRegularSecondLevelPageHeader>(l2_address) };
             let l2_indexes: &[UnwindInfoRegularSecondLevelEntry] = unsafe {
@@ -171,34 +180,6 @@ impl UnwindFuncInfo {
             None
         }
     }
-}
-
-#[repr(C)]
-#[derive(Debug, Default, Copy, Clone)]
-pub struct DyldUnwindSections {
-    pub mach_header: u64,
-    pub dwarf_section: u64,
-    pub dwarf_section_length: u64,
-    pub compact_unwind_section: u64,
-    pub compact_unwind_section_length: u64,
-}
-
-impl DyldUnwindSections {
-    pub fn find(address: u64) -> Option<Self> {
-        let mut sections = Self::default();
-        unsafe {
-            if _dyld_find_unwind_sections(address as _, &mut sections as _) {
-                Some(sections)
-            } else {
-                None
-            }
-        }
-    }
-}
-
-extern "C" {
-    // In 10.7.0 or later, libSystem.dylib implements this function.
-    fn _dyld_find_unwind_sections(address: *mut libc::c_void, sections: *mut DyldUnwindSections) -> bool;
 }
 
 //===----------------------------------------------------------------------===//
@@ -444,21 +425,7 @@ fn unwind_info_compressed_entry_encoding_index(entry: u32) -> u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{unwind_init_registers, Registers};
-
-    #[test]
-    fn test_find_dyld_unwind_sections() {
-        let mut registers = Registers::default();
-        unsafe {
-            unwind_init_registers(&mut registers as _);
-        }
-        let sections = DyldUnwindSections::find(registers.pc());
-        assert!(sections.is_some());
-        let sections = sections.unwrap();
-        assert_ne!(sections.mach_header, 0);
-        assert_ne!(sections.compact_unwind_section, 0);
-        assert_ne!(sections.compact_unwind_section_length, 0);
-    }
+    use crate::registers::{unwind_init_registers, Registers};
 
     #[test]
     fn test_find_unwind_func_info() {
@@ -467,7 +434,7 @@ mod tests {
             unwind_init_registers(&mut registers as _);
         }
         let sections = DyldUnwindSections::find(registers.pc()).unwrap();
-        let info = UnwindFuncInfo::find(sections, registers.pc());
+        let info = UnwindFuncInfo::find(registers.pc(), sections.compact_unwind_section, sections.mach_header);
         assert!(info.is_some());
         let info = info.unwrap();
         assert_ne!(info.start, 0);

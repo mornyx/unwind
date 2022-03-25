@@ -1,6 +1,46 @@
+#if defined(UNWIND_ARCH_X86_64)
+#if defined(UNWIND_OS_LINUX)
+    .text
+    .globl unwind_init_registers
+unwind_init_registers:
+#elif defined(UNWIND_OS_MACOS)
     .section __TEXT,__text
     .globl _unwind_init_registers
 _unwind_init_registers:
+#endif // UNWIND_OS_
+    movq    %rax,   (%rdi)
+    movq    %rdx,  8(%rdi)
+    movq    %rcx, 16(%rdi)
+    movq    %rbx, 24(%rdi)
+    movq    %rsi, 32(%rdi)
+    movq    %rdi, 40(%rdi)
+    movq    %rbp, 48(%rdi)
+    movq    %rsp, 56(%rdi)
+    addq    $8,   56(%rdi)
+    movq    %r8,  64(%rdi)
+    movq    %r9,  72(%rdi)
+    movq    %r10, 80(%rdi)
+    movq    %r11, 88(%rdi)
+    movq    %r12, 96(%rdi)
+    movq    %r13,104(%rdi)
+    movq    %r14,112(%rdi)
+    movq    %r15,120(%rdi)
+    movq    (%rsp),%rsi
+    movq    %rsi,128(%rdi)
+    xorl    %eax, %eax
+    ret
+#endif // UNWIND_ARCH_X86_64
+
+#if defined(UNWIND_ARCH_AARCH64)
+#if defined(UNWIND_OS_LINUX)
+    .text
+    .globl unwind_init_registers
+unwind_init_registers:
+#elif defined(UNWIND_OS_MACOS)
+    .section __TEXT,__text
+    .globl _unwind_init_registers
+_unwind_init_registers:
+#endif // UNWIND_OS_
     stp    x0, x1,  [x0, #0x000]
     stp    x2, x3,  [x0, #0x010]
     stp    x4, x5,  [x0, #0x020]
@@ -39,3 +79,4 @@ _unwind_init_registers:
     str    d30,     [x0, #0x200]
     str    d31,     [x0, #0x208]
     ret
+#endif // UNWIND_ARCH_AARCH64

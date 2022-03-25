@@ -34,7 +34,7 @@ pub extern "C" fn perf_signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, u
 
     // Do stack backtrace.
     let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers) {
+    while cursor.step(&mut registers).unwrap() {
         if pcs.len() >= MAX_STACK_DEPTH {
             break;
         }
