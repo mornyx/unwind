@@ -27,32 +27,6 @@ pub struct EhFrameHeader {
     pub table_enc: u8,
 }
 
-// impl std::fmt::Debug for EhFrameHeader {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         let &Self {
-//             start,
-//             end,
-//             eh_frame,
-//             fde_count,
-//             table,
-//             table_enc,
-//         } = self;
-//         write!(
-//             f,
-//             "EhFrameHeader {{ start={:#x}, end={:#x}, eh_frame={:#x}, fde_count={}, table={:#x}, table_enc={:#x} }}\n",
-//             start, end, eh_frame, fde_count, table, table_enc
-//         )?;
-//         let entry_size = decode_table_entry_size(self.table_enc);
-//         for n in 0..fde_count {
-//             let mut entry_loc = table + (n * entry_size) as u64;
-//             let pc = decode_pointer(&mut entry_loc, end, table_enc, start);
-//             let fde = decode_pointer(&mut entry_loc, end, table_enc, start);
-//             write!(f, "    pc={:#x}, fde={:#x}\n", pc, fde)?;
-//         }
-//         Ok(())
-//     }
-// }
-
 impl EhFrameHeader {
     pub fn decode(start: u64, end: u64) -> Result<Self, DwarfError> {
         let mut loc = start;
@@ -128,10 +102,11 @@ impl EhFrameHeader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{unwind_init_registers, Registers};
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn test_decode_header() {
+    fn test_eh_frame_header_decode() {
         let sects = crate::dyld::sections();
         assert!(sects.len() > 0);
         for s in sects {
@@ -139,5 +114,27 @@ mod tests {
             let hdr = EhFrameHeader::decode(s.eh_frame_hdr, hdr_end).unwrap();
             assert!(hdr.eh_frame > 0);
         }
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_eh_frame_header_search() {
+        let mut registers = Registers::default();
+        unsafe {
+            unwind_init_registers(&mut registers as _);
+        }
+        let sects = crate::dyld::sections();
+        let mut found = false;
+        for s in sects {
+            if s.contains(registers.pc()) {
+                let hdr_end = s.eh_frame_hdr + s.eh_frame_hdr_len;
+                let hdr = EhFrameHeader::decode(s.eh_frame_hdr, hdr_end).unwrap();
+                let (fde, _) = hdr.search(registers.pc()).unwrap();
+                assert!(fde.contains(registers.pc()));
+                found = true;
+                break;
+            }
+        }
+        assert!(found);
     }
 }
