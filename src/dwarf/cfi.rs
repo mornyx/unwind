@@ -1,4 +1,5 @@
-use crate::dwarf::encoding::{decode_pointer, decode_sleb128, decode_uleb128, DW_EH_PE_OMIT};
+use crate::dwarf::consts::DW_EH_PE_OMIT;
+use crate::dwarf::encoding::*;
 use crate::dwarf::DwarfError;
 use crate::utils::load;
 

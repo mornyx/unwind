@@ -1,31 +1,5 @@
-#![allow(unused)]
-
+use crate::dwarf::consts::*;
 use crate::utils::load;
-
-// These DW_* constants were taken from version 3 of the DWARF standard,
-// which is Copyright (c) 2005 Free Standards Group, and
-// Copyright (c) 1992, 1993 UNIX International, Inc.
-//
-// FSF exception handling Pointer-Encoding pub constants.
-// Used in CFI augmentation by GCC.
-pub const DW_EH_PE_PTR: u8 = 0x00;
-pub const DW_EH_PE_ULEB128: u8 = 0x01;
-pub const DW_EH_PE_UDATA2: u8 = 0x02;
-pub const DW_EH_PE_UDATA4: u8 = 0x03;
-pub const DW_EH_PE_UDATA8: u8 = 0x04;
-pub const _DW_EH_PE_SIGNED: u8 = 0x08;
-pub const DW_EH_PE_SLEB128: u8 = 0x09;
-pub const DW_EH_PE_SDATA2: u8 = 0x0A;
-pub const DW_EH_PE_SDATA4: u8 = 0x0B;
-pub const DW_EH_PE_SDATA8: u8 = 0x0C;
-pub const DW_EH_PE_ABSPTR: u8 = 0x00;
-pub const DW_EH_PE_PCREL: u8 = 0x10;
-pub const _DW_EH_PE_TEXTREL: u8 = 0x20;
-pub const DW_EH_PE_DATAREL: u8 = 0x30;
-pub const _DW_EH_PE_FUNCREL: u8 = 0x40;
-pub const _DW_EH_PE_ALIGNED: u8 = 0x50;
-pub const DW_EH_PE_INDIRECT: u8 = 0x80;
-pub const DW_EH_PE_OMIT: u8 = 0xFF;
 
 /// Decode a Pointer-Encoding value.
 pub fn decode_pointer(loc: &mut u64, end: u64, enc: u8, datarel_base: u64) -> u64 {

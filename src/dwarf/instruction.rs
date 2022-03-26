@@ -1,46 +1,11 @@
 use crate::dwarf::cfi::{CommonInformationEntry, FrameDescriptionEntry};
-use crate::dwarf::encoding::{decode_pointer, decode_sleb128, decode_uleb128};
+use crate::dwarf::consts::*;
+use crate::dwarf::encoding::*;
 use crate::dwarf::expression::evaluate;
 use crate::dwarf::DwarfError;
 use crate::registers::Registers;
 use crate::registers::UNW_ARM64_RA_SIGN_STATE;
 use crate::utils::load;
-
-// These DW_* constants were taken from version 3 of the DWARF standard,
-// which is Copyright (c) 2005 Free Standards Group, and
-// Copyright (c) 1992, 1993 UNIX International, Inc.
-//
-// DWARF unwind instructions.
-const DW_CFA_NOP: u8 = 0x0;
-const DW_CFA_SET_LOC: u8 = 0x1;
-const DW_CFA_ADVANCE_LOC1: u8 = 0x2;
-const DW_CFA_ADVANCE_LOC2: u8 = 0x3;
-const DW_CFA_ADVANCE_LOC4: u8 = 0x4;
-const DW_CFA_OFFSET_EXTENDED: u8 = 0x5;
-const DW_CFA_RESTORE_EXTENDED: u8 = 0x6;
-const DW_CFA_UNDEFINED: u8 = 0x7;
-const DW_CFA_SAME_VALUE: u8 = 0x8;
-const DW_CFA_REGISTER: u8 = 0x9;
-const DW_CFA_REMEMBER_STATE: u8 = 0xA;
-const DW_CFA_RESTORE_STATE: u8 = 0xB;
-const DW_CFA_DEF_CFA: u8 = 0xC;
-const DW_CFA_DEF_CFA_REGISTER: u8 = 0xD;
-const DW_CFA_DEF_CFA_OFFSET: u8 = 0xE;
-const DW_CFA_DEF_CFA_EXPRESSION: u8 = 0xF;
-const DW_CFA_EXPRESSION: u8 = 0x10;
-const DW_CFA_OFFSET_EXTENDED_SF: u8 = 0x11;
-const DW_CFA_DEF_CFA_SF: u8 = 0x12;
-const DW_CFA_DEF_CFA_OFFSET_SF: u8 = 0x13;
-const DW_CFA_VAL_OFFSET: u8 = 0x14;
-const DW_CFA_VAL_OFFSET_SF: u8 = 0x15;
-const DW_CFA_VAL_EXPRESSION: u8 = 0x16;
-const DW_CFA_ADVANCE_LOC: u8 = 0x40; // high 2 bits are 0x1, lower 6 bits are delta
-const DW_CFA_OFFSET: u8 = 0x80; // high 2 bits are 0x2, lower 6 bits are register
-const DW_CFA_RESTORE: u8 = 0xC0; // high 2 bits are 0x3, lower 6 bits are register
-const _DW_CFA_GNU_WINDOW_SAVE: u8 = 0x2D; // GNU extensions
-const DW_CFA_GNU_ARGS_SIZE: u8 = 0x2E;
-const DW_CFA_GNU_NEGATIVE_OFFSET_EXTENDED: u8 = 0x2F;
-const DW_CFA_AARCH64_NEGATE_RA_STATE: u8 = 0x2D; // AARCH64 extensions
 
 const MAX_REGISTER_NUM: usize = 287;
 

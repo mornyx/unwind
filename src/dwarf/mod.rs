@@ -5,6 +5,7 @@ pub use cfi::*;
 pub use header::EhFrameHeader;
 
 mod cfi;
+mod consts;
 mod encoding;
 mod expression;
 mod header;

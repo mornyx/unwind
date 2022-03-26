@@ -1,3 +1,6 @@
+mod consts;
+pub use consts::*;
+
 #[cfg(target_arch = "x86_64")]
 mod x64;
 #[cfg(target_arch = "x86_64")]
@@ -7,10 +10,6 @@ pub use x64::*;
 mod aarch64;
 #[cfg(target_arch = "aarch64")]
 pub use aarch64::*;
-
-// Architecture independent register numbers.
-pub const UNW_REG_IP: usize = usize::MAX; // instruction pointer
-pub const UNW_REG_SP: usize = usize::MAX - 1; // stack pointer
 
 extern "C" {
     /// Get the register context of the current thread stack and save it in `Registers`.

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use crate::compact::*;
 use crate::registers::{UNW_ARM64_FP, UNW_ARM64_LR, UNW_REG_IP, UNW_REG_SP};
 use crate::utils::load;

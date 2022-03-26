@@ -1,4 +1,5 @@
 use crate::dwarf::cfi::{CommonInformationEntry, FrameDescriptionEntry};
+use crate::dwarf::consts::*;
 use crate::dwarf::encoding::*;
 use crate::dwarf::DwarfError;
 use std::mem;
