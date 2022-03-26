@@ -1,4 +1,4 @@
-use crate::registers::{Registers, UNW_ARM64_MAX_REG_NUM, UNW_ARM64_RA_SIGN_STATE};
+use crate::registers::{Registers, UNW_ARM64_MAX_REG_NUM, UNW_ARM64_RA_SIGN_STATE, UNW_REG_IP, UNW_REG_SP};
 use instruction::{get_saved_float_register, get_saved_register, get_saved_vector_register, RegisterSavedWhere};
 
 pub use cfi::*;
@@ -65,7 +65,7 @@ pub fn step(
     //
     // We set the SP here to the CFA, allowing for it to be overridden
     // by a CFI directive later on.
-    new_registers.set_sp(cfa);
+    new_registers[UNW_REG_SP] = cfa;
 
     let mut return_address = 0;
     for n in 0..=UNW_ARM64_MAX_REG_NUM {
@@ -103,7 +103,7 @@ pub fn step(
 
     // Return address is address after call site instruction, so setting IP to
     // that does simulates a return.
-    new_registers.set_pc(return_address);
+    new_registers[UNW_REG_IP] = return_address;
 
     // Simulate the step by replacing the register set with the new ones.
     *registers = new_registers;

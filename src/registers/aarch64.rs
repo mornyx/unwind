@@ -81,10 +81,14 @@ pub const UNW_ARM64_MAX_REG_NUM: usize = 95;
 ///
 /// We can use [unwind_init_registers] to initialize `Registers` based on
 /// the current execution context:
-/// ```ignore
-/// let mut registers = Registers::default();
-/// unsafe { unwind_init_registers(&mut registers as _) };
-/// assert_ne!(registers.pc(), 0);
+/// ```
+/// use unwind::{unwind_init_registers, Registers};
+///
+/// fn main() {
+///     let mut registers = Registers::default();
+///     unsafe { unwind_init_registers(&mut registers as _) };
+///     assert_ne!(registers.pc(), 0);
+/// }
 /// ```
 ///
 /// But more suitable for this crate usage scenario is to use an existing
@@ -101,7 +105,7 @@ pub const UNW_ARM64_MAX_REG_NUM: usize = 95;
 /// context of the **parent** function:
 /// ```ignore
 /// let mut cursor = UnwindCursor::new();
-/// cursor.step(&mut registers);
+/// cursor.step(&mut registers).unwrap();
 /// ```
 ///
 /// [UnwindCursor]: crate::cursor::UnwindCursor
@@ -109,13 +113,13 @@ pub const UNW_ARM64_MAX_REG_NUM: usize = 95;
 #[repr(C)]
 #[derive(Debug, Default, Copy, Clone)]
 pub struct Registers {
-    pub x: [u64; 29], // x0 ~ x28
-    pub fp: u64,
-    pub lr: u64,
-    pub sp: u64,
-    pub pc: u64,
-    pub ra_sign_state: u64,
-    pub d: [f64; 32], // d0 ~ d31
+    x: [u64; 29], // x0 ~ x28
+    fp: u64,
+    lr: u64,
+    sp: u64,
+    pc: u64,
+    ra_sign_state: u64,
+    d: [f64; 32], // d0 ~ d31
 }
 
 impl Index<usize> for Registers {
@@ -199,22 +203,10 @@ impl Registers {
         self[UNW_REG_IP]
     }
 
-    /// Set the value of the PC (Program Counter) register.
-    #[inline]
-    pub fn set_pc(&mut self, v: u64) {
-        self[UNW_REG_IP] = v;
-    }
-
     /// Get the value of the SP (Stack Pointer) register.
     #[inline]
     pub fn sp(&self) -> u64 {
         self[UNW_REG_SP]
-    }
-
-    /// Set the value of the SP (Stack Pointer) register.
-    #[inline]
-    pub fn set_sp(&mut self, v: u64) {
-        self[UNW_REG_SP] = v;
     }
 
     #[inline]

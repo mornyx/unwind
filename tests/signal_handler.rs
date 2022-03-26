@@ -2,7 +2,6 @@ use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGPRO
 use rand::Rng;
 use smallvec::SmallVec;
 use std::sync::atomic::{AtomicU32, Ordering};
-use unwind::{Registers, UnwindCursor};
 
 const MAX_STACK_DEPTH: usize = 64;
 const MAX_SAMPLE_COUNT: u32 = 500; // about 5s (99Hz)
@@ -54,12 +53,11 @@ extern "C" {
 #[no_mangle]
 extern "C" fn perf_signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucontext: *mut libc::c_void) {
     let mut pcs: SmallVec<[u64; MAX_STACK_DEPTH]> = SmallVec::new();
-    let mut registers = Registers::from_ucontext(ucontext).unwrap();
-    pcs.push(registers.pc());
-    let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers).unwrap() {
+    unwind::trace_from_ucontext(ucontext, |registers| {
         pcs.push(registers.pc());
-    }
+        true
+    })
+    .unwrap();
     assert!(pcs.len() > 0);
     SAMPLE_COUNT.fetch_add(1, Ordering::SeqCst);
 }

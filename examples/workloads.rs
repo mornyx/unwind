@@ -1,7 +1,6 @@
 use nix::sys::signal::{sigaction, SaFlags, SigAction, SigHandler, SigSet, SIGPROF};
 use rand::Rng;
 use smallvec::SmallVec;
-use unwind::{Registers, UnwindCursor};
 
 const MAX_STACK_DEPTH: usize = 64;
 
@@ -45,23 +44,22 @@ fn frequency(v: i64) -> libc::itimerval {
 
 #[no_mangle]
 pub extern "C" fn perf_signal_handler(_: libc::c_int, _: *mut libc::siginfo_t, ucontext: *mut libc::c_void) {
-    // In order to skip the signal frame placed by the kernel, we choose to
-    // initialize the registers from ucontext.
-    let mut registers = Registers::from_ucontext(ucontext).unwrap();
-
-    // Heap allocations should be avoided in signal handlers, we choose
-    // to use SmallVec instead of Vec.
+    // Heap allocations should be avoided in signal handlers, we
+    // should use SmallVec instead of Vec.
     let mut pcs: SmallVec<[u64; MAX_STACK_DEPTH]> = SmallVec::new();
-    pcs.push(registers.pc());
 
     // Do stack backtrace.
-    let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers).unwrap() {
+    //
+    // In order to skip the signal frame placed by the kernel, we
+    // should use `trace_from_ucontext`.
+    unwind::trace_from_ucontext(ucontext, |registers| {
         if pcs.len() >= MAX_STACK_DEPTH {
-            break;
+            return false;
         }
         pcs.push(registers.pc());
-    }
+        true
+    })
+    .unwrap();
 
     // Resolve addresses into symbols and display.
     //

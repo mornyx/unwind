@@ -1,18 +1,11 @@
-use unwind::{unwind_init_registers, Registers, UnwindCursor};
-
 fn main() {
-    // Get the current register context.
-    let mut registers = Registers::default();
-    unsafe {
-        unwind_init_registers(&mut registers as _);
-    };
-
     // Do stack backtrace.
-    let mut pcs = vec![registers.pc()];
-    let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers).unwrap() {
+    let mut pcs = vec![];
+    unwind::trace(|registers| {
         pcs.push(registers.pc());
-    }
+        true
+    })
+    .unwrap();
 
     // Resolve addresses into symbols and display.
     for pc in pcs {

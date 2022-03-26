@@ -1,5 +1,3 @@
-use unwind::{unwind_init_registers, Registers, UnwindCursor};
-
 fn main() {
     let pcs = func1_inlined();
 
@@ -18,17 +16,11 @@ fn func1_inlined() -> Vec<u64> {
 }
 
 fn func2() -> Vec<u64> {
-    // Get the current register context.
-    let mut registers = Registers::default();
-    unsafe {
-        unwind_init_registers(&mut registers as _);
-    };
-
-    // Do stack backtrace.
-    let mut pcs = vec![registers.pc()];
-    let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers).unwrap() {
+    let mut pcs = vec![];
+    unwind::trace(|registers| {
         pcs.push(registers.pc());
-    }
+        true
+    })
+    .unwrap();
     pcs
 }

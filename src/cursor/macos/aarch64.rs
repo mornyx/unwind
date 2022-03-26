@@ -1,4 +1,4 @@
-use crate::registers::Registers;
+use crate::registers::{Registers, UNW_ARM64_FP, UNW_REG_IP};
 use crate::utils::load;
 use crate::Result;
 
@@ -28,11 +28,11 @@ impl UnwindCursor {
     /// This means that only PC (Program Counter) and FP (Frame Pointer) are
     /// restored. This is enough to trace call stack.
     pub fn step(&mut self, registers: &mut Registers) -> Result<bool> {
-        if registers.fp == 0 {
+        if registers[UNW_ARM64_FP] == 0 {
             return Ok(false);
         }
-        registers.pc = load::<u64>(registers.fp + 8);
-        registers.fp = load::<u64>(registers.fp);
+        registers[UNW_REG_IP] = load::<u64>(registers[UNW_ARM64_FP] + 8);
+        registers[UNW_ARM64_FP] = load::<u64>(registers[UNW_ARM64_FP]);
         Ok(true)
     }
 }

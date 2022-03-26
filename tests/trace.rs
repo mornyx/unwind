@@ -1,7 +1,5 @@
-use unwind::{unwind_init_registers, Registers, UnwindCursor};
-
 #[test]
-fn test_unwind_cursor() {
+fn test_trace() {
     let pcs = func1();
     assert!(pcs.len() > 3);
     let mut names = vec![];
@@ -14,7 +12,7 @@ fn test_unwind_cursor() {
     assert!(names[0].contains("func3"));
     assert!(names[1].contains("func2"));
     assert!(names[2].contains("func1"));
-    assert!(names[3].contains("test_unwind_cursor"));
+    assert!(names[3].contains("test_trace"));
 }
 
 #[inline(always)]
@@ -29,14 +27,11 @@ fn func2() -> Vec<u64> {
 
 #[inline(never)]
 fn func3() -> Vec<u64> {
-    let mut registers = Registers::default();
-    unsafe {
-        unwind_init_registers(&mut registers as _);
-    }
-    let mut pcs = vec![registers.pc()];
-    let mut cursor = UnwindCursor::new();
-    while cursor.step(&mut registers).unwrap() {
+    let mut pcs = vec![];
+    unwind::trace(|registers| {
         pcs.push(registers.pc());
-    }
+        true
+    })
+    .unwrap();
     pcs
 }
