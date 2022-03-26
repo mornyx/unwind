@@ -423,7 +423,7 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
             _ => unimplemented!(),
         }
     }
-    unimplemented!() // stack.top(0)
+    stack.top(0)
 }
 
 struct EvaluateStack {
