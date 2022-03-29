@@ -1,3 +1,4 @@
 - Add more tests for dwarf/*
 - Add more comments
 - Add fde cache to improve performance on Linux
+- Complete x86_64 support
