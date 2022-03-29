@@ -63,6 +63,8 @@ mod registers;
 mod utils;
 
 pub use cursor::UnwindCursor;
+#[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
+pub use dwarf::DwarfError;
 pub use registers::{unwind_init_registers, Registers};
 
 /// A result type that wraps [Error].
