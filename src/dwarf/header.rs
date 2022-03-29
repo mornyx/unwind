@@ -35,9 +35,9 @@ impl EhFrameHeader {
         if raw.version != 1 {
             return Err(DwarfError::HeaderInvalidVersion(raw.version));
         }
-        let eh_frame = decode_pointer(&mut loc, end, raw.eh_frame_ptr_enc, start);
+        let eh_frame = decode_pointer(&mut loc, end, raw.eh_frame_ptr_enc, start)?;
         let fde_count = if raw.fde_count_enc != DW_EH_PE_OMIT {
-            decode_pointer(&mut loc, end, raw.fde_count_enc, start)
+            decode_pointer(&mut loc, end, raw.fde_count_enc, start)?
         } else {
             0
         };
@@ -72,7 +72,7 @@ impl EhFrameHeader {
         while len > 1 {
             let mid = low + (len / 2);
             let mut entry_loc = table + (mid * entry_size) as u64;
-            let entry_target = decode_pointer(&mut entry_loc, end, table_enc, start);
+            let entry_target = decode_pointer(&mut entry_loc, end, table_enc, start)?;
             if entry_target == target {
                 low = mid;
                 break;
@@ -84,8 +84,8 @@ impl EhFrameHeader {
             }
         }
         let mut entry_loc = table + (low * entry_size) as u64;
-        let _ = decode_pointer(&mut entry_loc, end, table_enc, start);
-        let fde = decode_pointer(&mut entry_loc, end, table_enc, start);
+        let _ = decode_pointer(&mut entry_loc, end, table_enc, start)?;
+        let fde = decode_pointer(&mut entry_loc, end, table_enc, start)?;
         match FrameDescriptionEntry::decode(fde) {
             Ok((fde, cie)) => {
                 if target < fde.pc_start || target >= fde.pc_end {

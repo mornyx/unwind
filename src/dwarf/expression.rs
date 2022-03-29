@@ -1,12 +1,12 @@
 use crate::dwarf::consts::*;
 use crate::dwarf::encoding::{decode_sleb128, decode_uleb128};
+use crate::dwarf::{load_with_protect as load, DwarfError};
 use crate::registers::Registers;
-use crate::utils::load;
 use std::ops::{Index, IndexMut};
 
-pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u64 {
+pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> Result<u64, DwarfError> {
     let mut loc = expression;
-    let end = expression + decode_uleb128(&mut loc, expression + 20); // 20 is a tmp guard.
+    let end = expression + decode_uleb128(&mut loc, expression + 20)?; // 20 is a tmp guard.
     let mut stack = EvaluateStack::default();
     stack.push(initial_stack);
     while loc < end {
@@ -14,75 +14,75 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
         let mut s1: i64;
         let s2: i64; // temporarily remove `mut` to avoid warning
         let reg: u32; // ditto
-        let opcode = load::<u8>(loc);
+        let opcode = load::<u8>(loc)?;
         match opcode {
             DW_OP_ADDR => {
                 // Push immediate address sized value.
-                u1 = load::<u64>(loc);
+                u1 = load::<u64>(loc)?;
                 loc += 8;
                 stack.push(u1);
             }
             DW_OP_DEREF => {
                 // Pop stack, dereference, push result.
                 u1 = stack.pop();
-                stack.push(load::<u64>(u1));
+                stack.push(load::<u64>(u1)?);
             }
             DW_OP_CONST1U => {
                 // Push immediate 1 byte value.
-                u1 = load::<u8>(loc) as u64;
+                u1 = load::<u8>(loc)? as u64;
                 loc += 1;
                 stack.push(u1);
             }
             DW_OP_CONST1S => {
                 // Push immediate 1 byte signed value.
-                s1 = load::<i8>(loc) as i64;
+                s1 = load::<i8>(loc)? as i64;
                 loc += 1;
                 stack.push(s1 as u64);
             }
             DW_OP_CONST2U => {
                 // Push immediate 2 byte value.
-                u1 = load::<u16>(loc) as u64;
+                u1 = load::<u16>(loc)? as u64;
                 loc += 2;
                 stack.push(u1);
             }
             DW_OP_CONST2S => {
                 // Push immediate 2 byte signed value.
-                s1 = load::<i16>(loc) as i64;
+                s1 = load::<i16>(loc)? as i64;
                 loc += 2;
                 stack.push(s1 as u64);
             }
             DW_OP_CONST4U => {
                 // Push immediate 4 byte value.
-                u1 = load::<u32>(loc) as u64;
+                u1 = load::<u32>(loc)? as u64;
                 loc += 4;
                 stack.push(u1);
             }
             DW_OP_CONST4S => {
                 // Push immediate 4 byte signed value.
-                s1 = load::<i32>(loc) as i64;
+                s1 = load::<i32>(loc)? as i64;
                 loc += 4;
                 stack.push(s1 as u64);
             }
             DW_OP_CONST8U => {
                 // Push immediate 8 byte value.
-                u1 = load::<u64>(loc);
+                u1 = load::<u64>(loc)?;
                 loc += 8;
                 stack.push(u1);
             }
             DW_OP_CONST8S => {
                 // Push immediate 8 byte signed value.
-                s1 = load::<i64>(loc);
+                s1 = load::<i64>(loc)?;
                 loc += 8;
                 stack.push(s1 as u64);
             }
             DW_OP_CONSTU => {
                 // Push immediate ULEB128 value.
-                u1 = decode_uleb128(&mut loc, end);
+                u1 = decode_uleb128(&mut loc, end)?;
                 stack.push(u1);
             }
             DW_OP_CONSTS => {
                 // Push immediate SLEB128 value.
-                s1 = decode_sleb128(&mut loc, end);
+                s1 = decode_sleb128(&mut loc, end)?;
                 stack.push(s1 as u64);
             }
             DW_OP_DUP => {
@@ -101,7 +101,7 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
             }
             DW_OP_PICK => {
                 // Pick from.
-                reg = load::<u8>(loc) as u32;
+                reg = load::<u8>(loc)? as u32;
                 loc += 1;
                 u1 = stack.top(reg as usize);
                 stack.push(u1);
@@ -122,7 +122,7 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
             DW_OP_XDEREF => {
                 // Pop stack, dereference, push result.
                 u1 = stack.pop();
-                *stack.top_mut(0) = load::<u64>(u1);
+                *stack.top_mut(0) = load::<u64>(u1)?;
             }
             DW_OP_ABS => {
                 s1 = stack.top(0) as i64;
@@ -169,7 +169,7 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
                 *stack.top_mut(0) += u1;
             }
             DW_OP_PLUS_UCONST => {
-                u1 = decode_uleb128(&mut loc, end);
+                u1 = decode_uleb128(&mut loc, end)?;
                 *stack.top_mut(0) += u1;
             }
             DW_OP_SHL => {
@@ -190,12 +190,12 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
                 *stack.top_mut(0) ^= u1;
             }
             DW_OP_SKIP => {
-                s1 = load::<i16>(loc) as i64;
+                s1 = load::<i16>(loc)? as i64;
                 loc += 2;
                 loc = ((loc as i64) + s1) as u64;
             }
             DW_OP_BRA => {
-                s1 = load::<i16>(loc) as i64;
+                s1 = load::<i16>(loc)? as i64;
                 loc += 2;
                 if stack.pop() != 0 {
                     loc = ((loc as i64) + s1) as u64;
@@ -234,28 +234,28 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
                 stack.push(registers[reg as usize]);
             }
             DW_OP_REGX => {
-                reg = decode_uleb128(&mut loc, end) as u32;
+                reg = decode_uleb128(&mut loc, end)? as u32;
                 stack.push(registers[reg as usize]);
             }
             DW_OP_BREG0..=DW_OP_BREG31 => {
                 reg = (opcode - DW_OP_BREG0) as u32;
-                s1 = decode_sleb128(&mut loc, end);
+                s1 = decode_sleb128(&mut loc, end)?;
                 s1 += registers[reg as usize] as i64;
                 stack.push(s1 as u64);
             }
             DW_OP_BREGX => {
-                reg = decode_uleb128(&mut loc, end) as u32;
-                s1 = decode_sleb128(&mut loc, end);
+                reg = decode_uleb128(&mut loc, end)? as u32;
+                s1 = decode_sleb128(&mut loc, end)?;
                 s1 += registers[reg as usize] as i64;
                 stack.push(s1 as u64);
             }
             DW_OP_DEREF_SIZE => {
                 u1 = stack.pop();
-                match load::<u8>(loc) {
-                    1 => u1 = load::<u8>(u1) as u64,
-                    2 => u1 = load::<u16>(u1) as u64,
-                    4 => u1 = load::<u32>(u1) as u64,
-                    8 => u1 = load::<u64>(u1),
+                match load::<u8>(loc)? {
+                    1 => u1 = load::<u8>(u1)? as u64,
+                    2 => u1 = load::<u16>(u1)? as u64,
+                    4 => u1 = load::<u32>(u1)? as u64,
+                    8 => u1 = load::<u64>(u1)?,
                     _ => unreachable!(),
                 }
                 loc += 1;
@@ -264,7 +264,7 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> u
             _ => unimplemented!(),
         }
     }
-    stack.top(0)
+    Ok(stack.top(0))
 }
 
 struct EvaluateStack {

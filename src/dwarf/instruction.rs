@@ -2,10 +2,9 @@ use crate::dwarf::cfi::{CommonInformationEntry, FrameDescriptionEntry};
 use crate::dwarf::consts::*;
 use crate::dwarf::encoding::*;
 use crate::dwarf::expression::evaluate;
-use crate::dwarf::DwarfError;
+use crate::dwarf::{load_with_protect as load, DwarfError};
 use crate::registers::Registers;
 use crate::registers::UNW_ARM64_RA_SIGN_STATE;
-use crate::utils::load;
 
 const MAX_REGISTER_NUM: usize = 287;
 
@@ -57,9 +56,9 @@ impl Default for PrologInfo {
 }
 
 impl PrologInfo {
-    pub fn cfa(&self, registers: &Registers) -> u64 {
+    pub fn cfa(&self, registers: &Registers) -> Result<u64, DwarfError> {
         if self.cfa_register != 0 {
-            (registers[self.cfa_register as usize] as i64 + self.cfa_register_offset as i64) as u64
+            Ok((registers[self.cfa_register as usize] as i64 + self.cfa_register_offset as i64) as u64)
         } else if self.cfa_expression != 0 {
             evaluate(self.cfa_expression as u64, registers, 0)
         } else {
@@ -116,29 +115,29 @@ pub enum RegisterSavedWhere {
     IsExpression,
 }
 
-pub fn get_saved_register(registers: &Registers, loc: RegisterLocation, cfa: u64) -> u64 {
+pub fn get_saved_register(registers: &Registers, loc: RegisterLocation, cfa: u64) -> Result<u64, DwarfError> {
     match loc.location {
         RegisterSavedWhere::InCFA => load::<u64>((cfa as i64 + loc.value) as u64),
-        RegisterSavedWhere::AtExpression => load::<u64>(evaluate(loc.value as u64, registers, cfa)),
+        RegisterSavedWhere::AtExpression => load::<u64>(evaluate(loc.value as u64, registers, cfa)?),
         RegisterSavedWhere::IsExpression => evaluate(loc.value as u64, registers, cfa),
         RegisterSavedWhere::InRegister => load::<u64>(loc.value as u64),
-        RegisterSavedWhere::Undefined => 0,
+        RegisterSavedWhere::Undefined => Ok(0),
         _ => unreachable!(),
     }
 }
 
-pub fn get_saved_float_register(registers: &Registers, loc: RegisterLocation, cfa: u64) -> f64 {
+pub fn get_saved_float_register(registers: &Registers, loc: RegisterLocation, cfa: u64) -> Result<f64, DwarfError> {
     match loc.location {
         RegisterSavedWhere::InCFA => load::<f64>((cfa as i64 + loc.value) as u64),
-        RegisterSavedWhere::AtExpression => load::<f64>(evaluate(loc.value as u64, registers, cfa)),
+        RegisterSavedWhere::AtExpression => load::<f64>(evaluate(loc.value as u64, registers, cfa)?),
         _ => unreachable!(),
     }
 }
 
-pub fn get_saved_vector_register(registers: &Registers, loc: RegisterLocation, cfa: u64) -> u128 {
+pub fn get_saved_vector_register(registers: &Registers, loc: RegisterLocation, cfa: u64) -> Result<u128, DwarfError> {
     match loc.location {
         RegisterSavedWhere::InCFA => load::<u128>((cfa as i64 + loc.value) as u64),
-        RegisterSavedWhere::AtExpression => load::<u128>(evaluate(loc.value as u64, registers, cfa)),
+        RegisterSavedWhere::AtExpression => load::<u128>(evaluate(loc.value as u64, registers, cfa)?),
         _ => unreachable!(),
     }
 }
@@ -162,50 +161,50 @@ fn run_(
 
     // See DWARF Spec, section 6.4.2 for details on unwind opcodes.
     while loc < end && code_offset < pc_offset {
-        let opcode = load::<u8>(loc);
+        let opcode = load::<u8>(loc)?;
         loc += 1;
 
         match opcode {
             DW_CFA_NOP => {}
             DW_CFA_SET_LOC => {
-                code_offset = decode_pointer(&mut loc, end, cie.pointer_encoding, 0);
+                code_offset = decode_pointer(&mut loc, end, cie.pointer_encoding, 0)?;
             }
             DW_CFA_ADVANCE_LOC1 => {
-                code_offset += load::<u8>(loc) as u64 * cie.code_align_factor as u64;
+                code_offset += load::<u8>(loc)? as u64 * cie.code_align_factor as u64;
                 loc += 1;
             }
             DW_CFA_ADVANCE_LOC2 => {
-                code_offset += load::<u16>(loc) as u64 * cie.code_align_factor as u64;
+                code_offset += load::<u16>(loc)? as u64 * cie.code_align_factor as u64;
                 loc += 2;
             }
             DW_CFA_ADVANCE_LOC4 => {
-                code_offset += load::<u32>(loc) as u64 * cie.code_align_factor as u64;
+                code_offset += load::<u32>(loc)? as u64 * cie.code_align_factor as u64;
                 loc += 4;
             }
             DW_CFA_OFFSET_EXTENDED => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
-                let offset = decode_uleb128(&mut loc, end) as i64 * cie.data_align_factor as i64;
+                let offset = decode_uleb128(&mut loc, end)? as i64 * cie.data_align_factor as i64;
                 result.set_register(r, RegisterSavedWhere::InCFA, offset, &mut initial_state);
             }
             DW_CFA_RESTORE_EXTENDED => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.restore_register_to_initial_state(r, &mut initial_state);
             }
             DW_CFA_UNDEFINED => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.set_register_location(r, RegisterSavedWhere::Undefined, &mut initial_state);
             }
             DW_CFA_SAME_VALUE => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
@@ -215,11 +214,11 @@ fn run_(
                 result.set_register_location(r, RegisterSavedWhere::Unused, &mut initial_state);
             }
             DW_CFA_REGISTER => {
-                let r1 = decode_uleb128(&mut loc, end) as usize;
+                let r1 = decode_uleb128(&mut loc, end)? as usize;
                 if r1 > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r1));
                 }
-                let r2 = decode_uleb128(&mut loc, end) as usize;
+                let r2 = decode_uleb128(&mut loc, end)? as usize;
                 if r2 > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r2));
                 }
@@ -242,88 +241,88 @@ fn run_(
                 }
             }
             DW_CFA_DEF_CFA => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.cfa_register = r as u32;
-                result.cfa_register_offset = decode_uleb128(&mut loc, end) as i32;
+                result.cfa_register_offset = decode_uleb128(&mut loc, end)? as i32;
             }
             DW_CFA_DEF_CFA_REGISTER => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.cfa_register = r as u32;
             }
             DW_CFA_DEF_CFA_OFFSET => {
-                result.cfa_register_offset = decode_uleb128(&mut loc, end) as i32;
+                result.cfa_register_offset = decode_uleb128(&mut loc, end)? as i32;
             }
             DW_CFA_DEF_CFA_EXPRESSION => {
                 result.cfa_register = 0;
                 result.cfa_expression = loc as i64;
-                loc += decode_uleb128(&mut loc, end);
+                loc += decode_uleb128(&mut loc, end)?;
             }
             DW_CFA_EXPRESSION => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.set_register(r, RegisterSavedWhere::AtExpression, loc as i64, &mut initial_state);
-                loc += decode_uleb128(&mut loc, end);
+                loc += decode_uleb128(&mut loc, end)?;
             }
             DW_CFA_OFFSET_EXTENDED_SF => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
-                let offset = decode_sleb128(&mut loc, end) * cie.data_align_factor as i64;
+                let offset = decode_sleb128(&mut loc, end)? * cie.data_align_factor as i64;
                 result.set_register(r, RegisterSavedWhere::InCFA, offset, &mut initial_state);
             }
             DW_CFA_DEF_CFA_SF => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.cfa_register = r as u32;
-                result.cfa_register_offset = (decode_sleb128(&mut loc, end) * cie.data_align_factor as i64) as i32;
+                result.cfa_register_offset = (decode_sleb128(&mut loc, end)? * cie.data_align_factor as i64) as i32;
             }
             DW_CFA_DEF_CFA_OFFSET_SF => {
-                result.cfa_register_offset = (decode_sleb128(&mut loc, end) * cie.data_align_factor as i64) as i32;
+                result.cfa_register_offset = (decode_sleb128(&mut loc, end)? * cie.data_align_factor as i64) as i32;
             }
             DW_CFA_VAL_OFFSET => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
-                let offset = decode_uleb128(&mut loc, end) as i64 * cie.data_align_factor as i64;
+                let offset = decode_uleb128(&mut loc, end)? as i64 * cie.data_align_factor as i64;
                 result.set_register(r, RegisterSavedWhere::OffsetFromCFA, offset, &mut initial_state);
             }
             DW_CFA_VAL_OFFSET_SF => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
-                let offset = decode_sleb128(&mut loc, end) * cie.data_align_factor as i64;
+                let offset = decode_sleb128(&mut loc, end)? * cie.data_align_factor as i64;
                 result.set_register(r, RegisterSavedWhere::OffsetFromCFA, offset, &mut initial_state);
             }
             DW_CFA_VAL_EXPRESSION => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
                 result.set_register(r, RegisterSavedWhere::IsExpression, loc as i64, &mut initial_state);
-                loc += decode_uleb128(&mut loc, end);
+                loc += decode_uleb128(&mut loc, end)?;
             }
             DW_CFA_GNU_ARGS_SIZE => {
-                result.sp_extra_arg_size = decode_uleb128(&mut loc, end) as u32;
+                result.sp_extra_arg_size = decode_uleb128(&mut loc, end)? as u32;
             }
             DW_CFA_GNU_NEGATIVE_OFFSET_EXTENDED => {
-                let r = decode_uleb128(&mut loc, end) as usize;
+                let r = decode_uleb128(&mut loc, end)? as usize;
                 if r > MAX_REGISTER_NUM {
                     return Err(DwarfError::InvalidRegisterNumber(r));
                 }
-                let offset = decode_uleb128(&mut loc, end) as i64 * cie.data_align_factor as i64;
+                let offset = decode_uleb128(&mut loc, end)? as i64 * cie.data_align_factor as i64;
                 result.set_register(r, RegisterSavedWhere::InCFA, -offset, &mut initial_state);
             }
             #[cfg(target_arch = "aarch64")]
@@ -339,7 +338,7 @@ fn run_(
                         if r > MAX_REGISTER_NUM {
                             return Err(DwarfError::InvalidRegisterNumber(r));
                         }
-                        let offset = decode_uleb128(&mut loc, end) as i64 * cie.data_align_factor as i64;
+                        let offset = decode_uleb128(&mut loc, end)? as i64 * cie.data_align_factor as i64;
                         result.set_register(r, RegisterSavedWhere::InCFA, offset, &mut initial_state);
                     }
                     DW_CFA_ADVANCE_LOC => {

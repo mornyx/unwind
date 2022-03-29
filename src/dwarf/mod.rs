@@ -1,4 +1,5 @@
 use crate::registers::{Registers, UNW_ARM64_MAX_REG_NUM, UNW_ARM64_RA_SIGN_STATE, UNW_REG_IP, UNW_REG_SP};
+use crate::utils::{address_is_readable, load};
 use instruction::{get_saved_float_register, get_saved_register, get_saved_vector_register, RegisterSavedWhere};
 
 pub use cfi::*;
@@ -42,6 +43,9 @@ pub enum DwarfError {
 
     #[error("no remember state")]
     NoRememberState,
+
+    #[error("unreadable address: {0:#x}")]
+    UnreadableAddress(u64),
 }
 
 pub fn step(
@@ -54,7 +58,7 @@ pub fn step(
     let info = instruction::run(pc, fde, cie)?;
 
     // Get pointer to cfa (architecture specific).
-    let cfa = info.cfa(registers);
+    let cfa = info.cfa(registers)?;
 
     // Restore registers that DWARF says were saved.
     let mut new_registers = *registers;
@@ -72,14 +76,14 @@ pub fn step(
     for n in 0..=UNW_ARM64_MAX_REG_NUM {
         if info.saved_registers[n].location != RegisterSavedWhere::Unused {
             if registers.valid_float_register(n) {
-                new_registers.set_float_register(n, get_saved_float_register(registers, info.saved_registers[n], cfa));
+                new_registers.set_float_register(n, get_saved_float_register(registers, info.saved_registers[n], cfa)?);
             } else if registers.valid_vector_register(n) {
                 new_registers
-                    .set_vector_register(n, get_saved_vector_register(registers, info.saved_registers[n], cfa));
+                    .set_vector_register(n, get_saved_vector_register(registers, info.saved_registers[n], cfa)?);
             } else if n == cie.return_address_register as usize {
-                return_address = get_saved_register(registers, info.saved_registers[n], cfa);
+                return_address = get_saved_register(registers, info.saved_registers[n], cfa)?;
             } else if registers.valid_register(n) {
-                new_registers[n] = get_saved_register(registers, info.saved_registers[n], cfa);
+                new_registers[n] = get_saved_register(registers, info.saved_registers[n], cfa)?;
             } else {
                 return Err(DwarfError::InvalidRegisterNumber(n));
             }
@@ -109,4 +113,13 @@ pub fn step(
     // Simulate the step by replacing the register set with the new ones.
     *registers = new_registers;
     Ok(())
+}
+
+#[inline]
+fn load_with_protect<T: Copy>(address: u64) -> Result<T, DwarfError> {
+    if address_is_readable(address) {
+        Ok(load(address))
+    } else {
+        Err(DwarfError::UnreadableAddress(address))
+    }
 }

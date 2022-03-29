@@ -1,7 +1,6 @@
 use crate::dwarf::consts::DW_EH_PE_OMIT;
 use crate::dwarf::encoding::*;
-use crate::dwarf::DwarfError;
-use crate::utils::load;
+use crate::dwarf::{load_with_protect as load, DwarfError};
 
 #[derive(Debug, Default, Copy, Clone)]
 pub struct CommonInformationEntry {
@@ -31,12 +30,12 @@ impl CommonInformationEntry {
         cie.lsda_encoding = DW_EH_PE_OMIT;
 
         // Parse length.
-        let mut length = load::<u32>(loc) as u64;
+        let mut length = load::<u32>(loc)? as u64;
         loc += 4;
         let mut cie_content_end = loc + length;
         if length == 0xffffffff {
             // 0xffffffff means length is really next 8 bytes.
-            length = load::<u64>(loc);
+            length = load::<u64>(loc)?;
             loc += 8;
             cie_content_end = loc + length;
         }
@@ -45,14 +44,14 @@ impl CommonInformationEntry {
         }
 
         // CIE ID is always 0.
-        let cie_id = load::<u32>(loc);
+        let cie_id = load::<u32>(loc)?;
         loc += 4;
         if cie_id != 0 {
             return Err(DwarfError::CIEIdIsNotZero);
         }
 
         // Version is always 1 or 3.
-        let version = load::<u8>(loc);
+        let version = load::<u8>(loc)?;
         loc += 1;
         if version != 1 && version != 3 {
             return Err(DwarfError::CIEInvalidVersion(version));
@@ -60,48 +59,48 @@ impl CommonInformationEntry {
 
         // Save start of augmentation string and find end.
         let augmentation_str_start = loc;
-        while load::<u8>(loc) != 0 {
+        while load::<u8>(loc)? != 0 {
             loc += 1;
         }
         loc += 1; // skip '\0'.
 
         // Parse code alignment factor.
-        cie.code_align_factor = decode_uleb128(&mut loc, cie_content_end) as u32;
+        cie.code_align_factor = decode_uleb128(&mut loc, cie_content_end)? as u32;
 
         // Parse data alignment factor.
-        cie.data_align_factor = decode_sleb128(&mut loc, cie_content_end) as i32;
+        cie.data_align_factor = decode_sleb128(&mut loc, cie_content_end)? as i32;
 
         // Parse return address register.
         cie.return_address_register = if version == 1 {
-            let r = load::<u8>(loc);
+            let r = load::<u8>(loc)?;
             loc += 1;
             r
         } else {
-            let r = decode_uleb128(&mut loc, cie_content_end);
+            let r = decode_uleb128(&mut loc, cie_content_end)?;
             assert!(r < 255);
             r as u8
         };
 
         // Parse augmentation data based on augmentation string.
         let mut n = augmentation_str_start;
-        if load::<u8>(n) == b'z' {
+        if load::<u8>(n)? == b'z' {
             // Parse augmentation data length.
             let _ = decode_uleb128(&mut loc, cie_content_end);
-            while load::<u8>(n) != 0 {
-                match load::<u8>(n) {
+            while load::<u8>(n)? != 0 {
+                match load::<u8>(n)? {
                     b'z' => cie.fdes_have_augmentation_data = true,
                     b'P' => {
-                        cie.personality_encoding = load::<u8>(loc);
+                        cie.personality_encoding = load::<u8>(loc)?;
                         loc += 1;
                         cie.personality_offset_in_cie = (loc - start) as u8;
-                        cie.personality = decode_pointer(&mut loc, cie_content_end, cie.personality_encoding, 0);
+                        cie.personality = decode_pointer(&mut loc, cie_content_end, cie.personality_encoding, 0)?;
                     }
                     b'L' => {
-                        cie.lsda_encoding = load::<u8>(loc);
+                        cie.lsda_encoding = load::<u8>(loc)?;
                         loc += 1;
                     }
                     b'R' => {
-                        cie.pointer_encoding = load::<u8>(loc);
+                        cie.pointer_encoding = load::<u8>(loc)?;
                         loc += 1;
                     }
                     b'S' => cie.is_signal_frame = true,
@@ -137,11 +136,11 @@ impl FrameDescriptionEntry {
         fde.fde_start = loc;
 
         // Parse length.
-        let mut length = load::<u32>(loc) as u64;
+        let mut length = load::<u32>(loc)? as u64;
         loc += 4;
         if length == 0xffffffff {
             // 0xffffffff means length is really next 8 bytes.
-            length = load::<u64>(loc);
+            length = load::<u64>(loc)?;
             loc += 8;
         }
         if length == 0 {
@@ -150,7 +149,7 @@ impl FrameDescriptionEntry {
         let next_cfi = loc + length;
 
         // Parse related CIE.
-        let cie_ptr = load::<u32>(loc) as u64;
+        let cie_ptr = load::<u32>(loc)? as u64;
         if cie_ptr == 0 {
             return Err(DwarfError::FDEIsReallyCIE);
         }
@@ -159,21 +158,21 @@ impl FrameDescriptionEntry {
         loc += 4;
 
         // Parse pc begin and range.
-        let pc_start = decode_pointer(&mut loc, next_cfi, cie.pointer_encoding, 0);
-        let pc_range = decode_pointer(&mut loc, next_cfi, cie.pointer_encoding & 0x0F, 0);
+        let pc_start = decode_pointer(&mut loc, next_cfi, cie.pointer_encoding, 0)?;
+        let pc_range = decode_pointer(&mut loc, next_cfi, cie.pointer_encoding & 0x0F, 0)?;
 
         // Check for augmentation length.
         if cie.fdes_have_augmentation_data {
-            let augmentation_len = decode_uleb128(&mut loc, next_cfi);
+            let augmentation_len = decode_uleb128(&mut loc, next_cfi)?;
             let end_of_augmentation = loc + augmentation_len;
             if cie.lsda_encoding != DW_EH_PE_OMIT {
                 // Peek at value (without indirection).
                 // Zero means no LSDA.
                 let lsda_start = loc;
-                if decode_pointer(&mut loc, next_cfi, cie.lsda_encoding & 0x0F, 0) != 0 {
+                if decode_pointer(&mut loc, next_cfi, cie.lsda_encoding & 0x0F, 0)? != 0 {
                     // Reset pointer and re-parse LSDA address.
                     loc = lsda_start;
-                    fde.lsda = decode_pointer(&mut loc, next_cfi, cie.lsda_encoding, 0);
+                    fde.lsda = decode_pointer(&mut loc, next_cfi, cie.lsda_encoding, 0)?;
                 }
             }
             loc = end_of_augmentation;
@@ -220,11 +219,11 @@ impl Entries {
         }
 
         // Parse length.
-        let mut cfi_length = load::<u32>(loc) as u64;
+        let mut cfi_length = load::<u32>(loc)? as u64;
         loc += 4;
         if cfi_length == 0xffffffff {
             // 0xffffffff means length is really next 8 bytes.
-            cfi_length = load::<u64>(loc);
+            cfi_length = load::<u64>(loc)?;
             loc += 8;
         }
         if cfi_length == 0 {
@@ -233,7 +232,7 @@ impl Entries {
         }
 
         // Parse CIE ID.
-        let cie_id = load::<u32>(loc);
+        let cie_id = load::<u32>(loc)?;
         if cie_id == 0 {
             // Parse CIE.
             let cie = CommonInformationEntry::decode(self.eh_frame)?;
