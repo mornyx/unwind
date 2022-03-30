@@ -1,9 +1,9 @@
+use crate::dyld::SectionInfo;
 use crate::registers::{Registers, UNW_ARM64_MAX_REG_NUM, UNW_ARM64_RA_SIGN_STATE, UNW_REG_IP, UNW_REG_SP};
 use crate::utils::{address_is_readable, load};
+use cfi::{CommonInformationEntry, FrameDescriptionEntry};
+use header::EhFrameHeader;
 use instruction::{get_saved_float_register, get_saved_register, get_saved_vector_register, RegisterSavedWhere};
-
-pub use cfi::*;
-pub use header::EhFrameHeader;
 
 mod cfi;
 mod consts;
@@ -48,14 +48,12 @@ pub enum DwarfError {
     UnreadableAddress(u64),
 }
 
-pub fn step(
-    pc: u64,
-    fde: &FrameDescriptionEntry,
-    cie: &CommonInformationEntry,
-    registers: &mut Registers,
-) -> Result<(), DwarfError> {
+pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result<(), DwarfError> {
+    // Search FDE & CIE for target PC.
+    let (fde, cie) = search_fde(pc, section)?;
+
     // Run instructions to calculate PrologInfo from FDE.
-    let info = instruction::run(pc, fde, cie)?;
+    let info = instruction::run(pc, &fde, &cie)?;
 
     // Get pointer to cfa (architecture specific).
     let cfa = info.cfa(registers)?;
@@ -113,6 +111,16 @@ pub fn step(
     // Simulate the step by replacing the register set with the new ones.
     *registers = new_registers;
     Ok(())
+}
+
+fn search_fde(pc: u64, s: &SectionInfo) -> Result<(FrameDescriptionEntry, CommonInformationEntry), DwarfError> {
+    let end = s.eh_frame_hdr + s.eh_frame_hdr_len;
+    let header = EhFrameHeader::decode(s.eh_frame_hdr, end)?;
+    match header.search(pc) {
+        Ok(v) => Ok(v),
+        Err(DwarfError::FDENotFound) => cfi::scan(header.eh_frame, u64::MAX, pc),
+        Err(err) => Err(err),
+    }
 }
 
 #[inline]

@@ -13,6 +13,7 @@ pub struct AddressRange {
 impl AddressRange {
     /// Determine whether the target address is in the current range.
     #[inline]
+    #[cfg_attr(all(target_os = "macos", target_arch = "aarch64"), allow(unused))]
     pub fn contains(&self, target: u64) -> bool {
         self.start <= target && target < self.end
     }

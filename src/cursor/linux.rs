@@ -1,4 +1,4 @@
-use crate::dwarf::{self, DwarfError, EhFrameHeader};
+use crate::dwarf;
 use crate::dyld::{sections, SectionInfo};
 use crate::registers::Registers;
 
@@ -44,19 +44,11 @@ impl UnwindCursor {
         }
         for s in self.sections {
             if s.contains(pc) {
-                let end = s.eh_frame_hdr + s.eh_frame_hdr_len;
-                let header = EhFrameHeader::decode(s.eh_frame_hdr, end)?;
-                let (fde, cie) = match header.search(pc) {
-                    Ok(v) => v,
-                    Err(DwarfError::FDENotFound) => match dwarf::scan(header.eh_frame, u64::MAX, pc) {
-                        Ok(v) => v,
-                        Err(DwarfError::FDENotFound) => return Ok(false),
-                        Err(err) => return Err(err.into()),
-                    },
-                    Err(err) => return Err(err.into()),
+                return match dwarf::step(pc, s, registers) {
+                    Ok(_) => Ok(true),
+                    Err(dwarf::DwarfError::FDENotFound) => Ok(false),
+                    Err(err) => Err(err.into()),
                 };
-                dwarf::step(pc, &fde, &cie, registers)?;
-                return Ok(true);
             }
         }
         Ok(false)
