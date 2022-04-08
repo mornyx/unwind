@@ -256,12 +256,12 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> R
                     2 => u1 = load::<u16>(u1)? as u64,
                     4 => u1 = load::<u32>(u1)? as u64,
                     8 => u1 = load::<u64>(u1)?,
-                    _ => unreachable!(),
+                    v => return Err(DwarfError::InvalidExpressionDerefSize(v)),
                 }
                 loc += 1;
                 stack.push(u1);
             }
-            _ => unimplemented!(),
+            v => return Err(DwarfError::InvalidExpression(v)),
         }
     }
     Ok(stack.top(0))

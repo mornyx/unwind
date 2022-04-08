@@ -71,11 +71,15 @@ pub use registers::{unwind_init_registers, Registers};
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Error definition.
-#[derive(thiserror::Error, Debug, Copy, Clone)]
+#[derive(thiserror::Error, Debug)]
 pub enum Error {
     #[cfg(not(all(target_arch = "aarch64", target_os = "macos")))]
-    #[error("{0}")]
+    #[error("dwarf: {0}")]
     Dwarf(#[from] dwarf::DwarfError),
+
+    #[cfg(target_os = "linux")]
+    #[error("read maps: {0}")]
+    ReadMaps(std::io::Error),
 
     #[error("invalid ucontext")]
     InvalidUcontext,
@@ -92,6 +96,9 @@ pub fn trace<F>(mut f: F) -> Result<bool>
 where
     F: FnMut(&Registers) -> bool,
 {
+    #[cfg(target_os = "linux")]
+    utils::update_thread_maps().map_err(|err| Error::ReadMaps(err))?;
+
     let mut registers = Registers::default();
     unsafe {
         unwind_init_registers(&mut registers as _);
@@ -116,6 +123,9 @@ pub fn trace_from_ucontext<F>(ucontext: *mut libc::c_void, mut f: F) -> Result<b
 where
     F: FnMut(&Registers) -> bool,
 {
+    #[cfg(target_os = "linux")]
+    utils::update_thread_maps().map_err(|err| Error::ReadMaps(err))?;
+
     if let Some(mut registers) = Registers::from_ucontext(ucontext) {
         // Since our backtracking starts from ucontext, we need to
         // call `f` once before `step`.

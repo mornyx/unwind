@@ -4,6 +4,7 @@ use crate::dwarf::encoding::*;
 use crate::dwarf::expression::evaluate;
 use crate::dwarf::{load_with_protect as load, DwarfError};
 use crate::registers::Registers;
+#[cfg(target_arch = "aarch64")]
 use crate::registers::UNW_ARM64_RA_SIGN_STATE;
 
 const MAX_REGISTER_NUM: usize = 287;
@@ -62,7 +63,7 @@ impl PrologInfo {
         } else if self.cfa_expression != 0 {
             evaluate(self.cfa_expression as u64, registers, 0)
         } else {
-            unreachable!()
+            Err(DwarfError::NoWayToCalculateCfa)
         }
     }
 
@@ -77,6 +78,7 @@ impl PrologInfo {
         self.saved_registers[r].location = new_loc;
     }
 
+    #[cfg_attr(target_arch = "x86_64", allow(unused))]
     pub fn set_register_value(&mut self, r: usize, new_v: i64, initial_state: &mut PrologInfo) {
         self.check_save_register(r, initial_state);
         self.saved_registers[r].value = new_v;
@@ -122,7 +124,7 @@ pub fn get_saved_register(registers: &Registers, loc: RegisterLocation, cfa: u64
         RegisterSavedWhere::IsExpression => evaluate(loc.value as u64, registers, cfa),
         RegisterSavedWhere::InRegister => load::<u64>(loc.value as u64),
         RegisterSavedWhere::Undefined => Ok(0),
-        _ => unreachable!(),
+        _ => Err(DwarfError::InvalidRegisterLocation),
     }
 }
 
@@ -130,7 +132,7 @@ pub fn get_saved_float_register(registers: &Registers, loc: RegisterLocation, cf
     match loc.location {
         RegisterSavedWhere::InCFA => load::<f64>((cfa as i64 + loc.value) as u64),
         RegisterSavedWhere::AtExpression => load::<f64>(evaluate(loc.value as u64, registers, cfa)?),
-        _ => unreachable!(),
+        _ => Err(DwarfError::InvalidRegisterLocation),
     }
 }
 
@@ -138,7 +140,7 @@ pub fn get_saved_vector_register(registers: &Registers, loc: RegisterLocation, c
     match loc.location {
         RegisterSavedWhere::InCFA => load::<u128>((cfa as i64 + loc.value) as u64),
         RegisterSavedWhere::AtExpression => load::<u128>(evaluate(loc.value as u64, registers, cfa)?),
-        _ => unreachable!(),
+        _ => Err(DwarfError::InvalidRegisterLocation),
     }
 }
 
@@ -351,7 +353,7 @@ fn run_(
                         }
                         result.restore_register_to_initial_state(r, &initial_state);
                     }
-                    _ => return Err(DwarfError::InvalidOpcode(opcode)),
+                    v => return Err(DwarfError::InvalidInstruction(v)),
                 }
             }
         }

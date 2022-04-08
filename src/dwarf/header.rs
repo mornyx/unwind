@@ -33,7 +33,7 @@ impl EhFrameHeader {
         let raw = unsafe { mem::transmute::<_, &RawEhFrameHeader>(loc as *const u8) };
         loc += mem::size_of::<RawEhFrameHeader>() as u64;
         if raw.version != 1 {
-            return Err(DwarfError::HeaderInvalidVersion(raw.version));
+            return Err(DwarfError::InvalidHeaderVersion(raw.version));
         }
         let eh_frame = decode_pointer(&mut loc, end, raw.eh_frame_ptr_enc, start)?;
         let fde_count = if raw.fde_count_enc != DW_EH_PE_OMIT {
@@ -65,7 +65,7 @@ impl EhFrameHeader {
             DW_EH_PE_UDATA2 | DW_EH_PE_SDATA2 => 4,
             DW_EH_PE_UDATA4 | DW_EH_PE_SDATA4 => 8,
             DW_EH_PE_UDATA8 | DW_EH_PE_SDATA8 => 16,
-            _ => unreachable!(),
+            v => return Err(DwarfError::InvalidPointerEncodingSize(v)),
         };
         let mut low = 0;
         let mut len = fde_count;

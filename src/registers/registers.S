@@ -9,11 +9,11 @@ unwind_init_registers:
 _unwind_init_registers:
 #endif // UNWIND_OS_
     movq    %rax,   (%rdi)
-    movq    %rdx,  8(%rdi)
+    movq    %rbx,  8(%rdi)
     movq    %rcx, 16(%rdi)
-    movq    %rbx, 24(%rdi)
-    movq    %rsi, 32(%rdi)
-    movq    %rdi, 40(%rdi)
+    movq    %rdx, 24(%rdi)
+    movq    %rdi, 32(%rdi)
+    movq    %rsi, 40(%rdi)
     movq    %rbp, 48(%rdi)
     movq    %rsp, 56(%rdi)
     addq    $8,   56(%rdi)
@@ -26,8 +26,8 @@ _unwind_init_registers:
     movq    %r14,112(%rdi)
     movq    %r15,120(%rdi)
     movq    (%rsp),%rsi
-    movq    %rsi,128(%rdi)
-    xorl    %eax, %eax
+    movq    %rsi,128(%rdi) // store return address as rip
+    xorl    %eax, %eax     // return 0
     ret
 #endif // UNWIND_ARCH_X86_64
 

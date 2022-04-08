@@ -1,5 +1,7 @@
 use crate::dyld::SectionInfo;
-use crate::registers::{Registers, UNW_ARM64_MAX_REG_NUM, UNW_ARM64_RA_SIGN_STATE, UNW_REG_IP, UNW_REG_SP};
+#[cfg(target_arch = "aarch64")]
+use crate::registers::UNW_ARM64_RA_SIGN_STATE;
+use crate::registers::{Registers, UNW_REG_IP, UNW_REG_SP};
 use crate::utils::{address_is_readable, load};
 use cfi::{CommonInformationEntry, FrameDescriptionEntry};
 use header::EhFrameHeader;
@@ -15,7 +17,7 @@ mod instruction;
 #[derive(thiserror::Error, Debug, Copy, Clone)]
 pub enum DwarfError {
     #[error("invalid .eh_frame_hdr version: {0}")]
-    HeaderInvalidVersion(u8),
+    InvalidHeaderVersion(u8),
 
     #[error("cie zero length")]
     CIEZeroLength,
@@ -38,14 +40,50 @@ pub enum DwarfError {
     #[error("invalid register number: {0}")]
     InvalidRegisterNumber(usize),
 
-    #[error("invalid opcode: {0}")]
-    InvalidOpcode(u8),
+    #[error("invalid instruction: {0}")]
+    InvalidInstruction(u8),
+
+    #[error("invalid expression: {0}")]
+    InvalidExpression(u8),
+
+    #[error("invalid expression deref size: {0}")]
+    InvalidExpressionDerefSize(u8),
+
+    #[error("invalid pointer encoding offset: {0}")]
+    InvalidPointerEncodingOffset(u8),
+
+    #[error("invalid pointer encoding value: {0}")]
+    InvalidPointerEncodingValue(u8),
+
+    #[error("invalid pointer encoding size: {0}")]
+    InvalidPointerEncodingSize(u8),
+
+    #[error("invalid datarel_base")]
+    InvalidDataRelBase,
+
+    #[error("invalid register location")]
+    InvalidRegisterLocation,
 
     #[error("no remember state")]
     NoRememberState,
 
     #[error("unreadable address: {0:#x}")]
     UnreadableAddress(u64),
+
+    #[error("unimplemented ra sign state")]
+    UnimplementedRaSignState,
+
+    #[error("malformed uleb128 expression at: {0:#x}")]
+    MalformedUleb128Expression(u64),
+
+    #[error("truncated uleb128 expression at: {0:#x}")]
+    TruncatedUleb128Expression(u64),
+
+    #[error("truncated uleb128 expression at: {0:#x}")]
+    TruncatedSleb128Expression(u64),
+
+    #[error("no way to calculate cfa")]
+    NoWayToCalculateCfa,
 }
 
 pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result<(), DwarfError> {
@@ -71,7 +109,7 @@ pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result
     new_registers[UNW_REG_SP] = cfa;
 
     let mut return_address = 0;
-    for n in 0..=UNW_ARM64_MAX_REG_NUM {
+    for n in 0..=Registers::max_register_num() {
         if info.saved_registers[n].location != RegisterSavedWhere::Unused {
             if registers.valid_float_register(n) {
                 new_registers.set_float_register(n, get_saved_float_register(registers, info.saved_registers[n], cfa)?);
@@ -100,7 +138,8 @@ pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result
         // restored. autia1716 is used instead of autia as autia1716 assembles
         // to a NOP on pre-v8.3a architectures.
         if info.saved_registers[UNW_ARM64_RA_SIGN_STATE].value != 0 && return_address != 0 {
-            unimplemented!(); // TODO: implement
+            // TODO: implement
+            return Err(DwarfError::UnimplementedRaSignState);
         }
     }
 

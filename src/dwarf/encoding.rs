@@ -9,14 +9,14 @@ pub fn decode_pointer(loc: &mut u64, end: u64, enc: u8, datarel_base: u64) -> Re
         DW_EH_PE_PCREL => *loc,
         DW_EH_PE_DATAREL => {
             // DW_EH_PE_DATAREL is only valid in a few places, so the parameter has a
-            // default value of 0, and we abort in the event that someone calls this
-            // function with a datarelBase of 0 and DW_EH_PE_DATAREL encoding.
+            // default value of 0, and we return an error in the event that someone calls
+            // this function with a datarelBase of 0 and DW_EH_PE_DATAREL encoding.
             if datarel_base == 0 {
-                unreachable!();
+                return Err(DwarfError::InvalidDataRelBase);
             }
             datarel_base
         }
-        _ => unreachable!(),
+        v => return Err(DwarfError::InvalidPointerEncodingOffset(v)),
     };
 
     // Get value.
@@ -77,7 +77,7 @@ pub fn decode_pointer(loc: &mut u64, end: u64, enc: u8, datarel_base: u64) -> Re
                 offset - ((-v) as u64)
             }
         }
-        _ => unreachable!(),
+        v => return Err(DwarfError::InvalidPointerEncodingValue(v)),
     };
 
     // Dereference the pointer if necessary.
@@ -93,11 +93,11 @@ pub fn decode_uleb128(loc: &mut u64, end: u64) -> Result<u64, DwarfError> {
     let mut bit = 0u64;
     loop {
         if *loc == end {
-            panic!("truncated uleb128 expression");
+            return Err(DwarfError::TruncatedUleb128Expression(*loc));
         }
         let b = (load::<u8>(*loc)? & 0b1111111) as u64;
         if bit >= 64 || b << bit >> bit != b {
-            panic!("malformed uleb128 expression");
+            return Err(DwarfError::MalformedUleb128Expression(*loc));
         }
         res |= b << bit;
         bit += 7;
@@ -117,7 +117,7 @@ pub fn decode_sleb128(loc: &mut u64, end: u64) -> Result<i64, DwarfError> {
     let mut byte;
     loop {
         if *loc == end {
-            panic!("truncated sleb128 expression");
+            return Err(DwarfError::TruncatedSleb128Expression(*loc));
         }
         byte = load::<u8>(*loc)?;
         *loc += 1;

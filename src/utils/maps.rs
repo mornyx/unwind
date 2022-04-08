@@ -1,24 +1,32 @@
 use crate::utils::AddressRange;
 use byteorder::ReadBytesExt;
 use smallvec::SmallVec;
+use std::cell::RefCell;
 use std::ffi::CStr;
 use std::fs::File;
 use std::io;
 use std::io::ErrorKind;
 
-pub const MAX_MAPS_LEN: usize = 256;
+const MAX_MAPS_LEN: usize = 256;
 const READ_BUFFER_SIZE: usize = 1024;
 
 thread_local! {
-    static MAPS: SmallVec<[AddressRange; MAX_MAPS_LEN]> = {
-        MapsReader::open().unwrap().read_maps().unwrap()
+    static MAPS: RefCell<SmallVec<[AddressRange; MAX_MAPS_LEN]>> = {
+        RefCell::new(MapsReader::open().unwrap().read_maps().unwrap())
     };
+}
+
+pub fn update_thread_maps() -> io::Result<()> {
+    MAPS.with(|maps| {
+        maps.replace(MapsReader::open()?.read_maps()?);
+        Ok(())
+    })
 }
 
 /// Determine whether the target address is readable.
 pub fn address_is_readable(target: u64) -> bool {
     MAPS.with(|maps| {
-        for m in maps {
+        for m in maps.borrow().iter() {
             if m.contains(target) {
                 return true;
             }
@@ -35,14 +43,14 @@ struct MapsReader {
 impl MapsReader {
     fn open() -> io::Result<Self> {
         unsafe {
-            let mut buffer = [0u8; 1024];
+            let mut buffer = [0u8; READ_BUFFER_SIZE];
             libc::sprintf(
                 &mut buffer[0] as *mut u8 as _,
                 "/proc/%d/task/%d/maps\0".as_ptr() as _,
                 libc::getpid(),
                 libc::gettid(),
             );
-            let filename = CStr::from_ptr(&buffer[0] as _).to_str().unwrap();
+            let filename = CStr::from_ptr(&buffer[0] as *const u8 as _).to_str().unwrap();
             let file = File::open(filename)?;
             Ok(Self { file, buffer })
         }
@@ -117,7 +125,7 @@ impl MapsReader {
     }
 
     fn str_in_buffer(&self) -> &str {
-        unsafe { CStr::from_ptr(&self.buffer[0] as _).to_str().unwrap() }
+        unsafe { CStr::from_ptr(&self.buffer[0] as *const u8 as _).to_str().unwrap() }
     }
 }
 

@@ -121,6 +121,11 @@ impl Registers {
         }
     }
 
+    #[inline]
+    pub fn max_register_num() -> usize {
+        UNW_ARM64_MAX_REG_NUM
+    }
+
     /// Get the value of the PC (Program Counter) register.
     #[inline]
     pub fn pc(&self) -> u64 {
