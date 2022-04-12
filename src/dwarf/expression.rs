@@ -231,21 +231,21 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> R
             }
             DW_OP_REG0..=DW_OP_REG31 => {
                 reg = (opcode - DW_OP_REG0) as u32;
-                if !Registers::valid_register(reg) {
+                if !Registers::valid_register(reg as usize) {
                     return Err(DwarfError::InvalidExpressionRegisterNumber(reg));
                 }
                 stack.push(registers[reg as usize]);
             }
             DW_OP_REGX => {
                 reg = decode_uleb128(&mut loc, end)? as u32;
-                if !Registers::valid_register(reg) {
+                if !Registers::valid_register(reg as usize) {
                     return Err(DwarfError::InvalidExpressionRegisterNumber(reg));
                 }
                 stack.push(registers[reg as usize]);
             }
             DW_OP_BREG0..=DW_OP_BREG31 => {
                 reg = (opcode - DW_OP_BREG0) as u32;
-                if !Registers::valid_register(reg) {
+                if !Registers::valid_register(reg as usize) {
                     return Err(DwarfError::InvalidExpressionRegisterNumber(reg));
                 }
                 s1 = decode_sleb128(&mut loc, end)?;
@@ -254,7 +254,7 @@ pub fn evaluate(expression: u64, registers: &Registers, initial_stack: u64) -> R
             }
             DW_OP_BREGX => {
                 reg = decode_uleb128(&mut loc, end)? as u32;
-                if !Registers::valid_register(reg) {
+                if !Registers::valid_register(reg as usize) {
                     return Err(DwarfError::InvalidExpressionRegisterNumber(reg));
                 }
                 s1 = decode_sleb128(&mut loc, end)?;
