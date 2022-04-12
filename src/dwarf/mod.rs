@@ -43,6 +43,9 @@ pub enum DwarfError {
     #[error("invalid cfa register number: {0}")]
     InvalidCfaRegisterNumber(usize),
 
+    #[error("invalid return address register number: {0}")]
+    InvalidReturnAddressRegisterNumber(usize),
+
     #[error("invalid instruction: {0}")]
     InvalidInstruction(u8),
 
@@ -51,6 +54,9 @@ pub enum DwarfError {
 
     #[error("invalid expression deref size: {0}")]
     InvalidExpressionDerefSize(u8),
+
+    #[error("invalid expression register number: {0}")]
+    InvalidExpressionRegisterNumber(u32),
 
     #[error("invalid pointer encoding offset: {0}")]
     InvalidPointerEncodingOffset(u8),
@@ -129,6 +135,11 @@ pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result
         } else if n == cie.return_address_register as usize {
             // Leaf function keeps the return address in register and there is no
             // explicit instructions how to restore it.
+            if !Registers::valid_register(cie.return_address_register as usize) {
+                return Err(DwarfError::InvalidReturnAddressRegisterNumber(
+                    cie.return_address_register as usize,
+                ));
+            }
             return_address = registers[cie.return_address_register as usize];
         }
     }
