@@ -60,6 +60,7 @@ impl Index<usize> for Registers {
     type Output = u64;
 
     fn index(&self, index: usize) -> &u64 {
+        assert!(Self::valid_register(index));
         match index {
             UNW_REG_IP | UNW_X86_64_RIP => &self.rip,
             UNW_REG_SP | UNW_X86_64_RSP => &self.rsp,
@@ -85,6 +86,7 @@ impl Index<usize> for Registers {
 
 impl IndexMut<usize> for Registers {
     fn index_mut(&mut self, index: usize) -> &mut u64 {
+        assert!(Self::valid_register(index));
         match index {
             UNW_REG_IP | UNW_X86_64_RIP => &mut self.rip,
             UNW_REG_SP | UNW_X86_64_RSP => &mut self.rsp,
@@ -177,27 +179,25 @@ impl Registers {
         UNW_X86_64_MAX_REG_NUM
     }
 
-    /// Get the value of the PC (Program Counter) register.
     #[inline]
-    pub fn pc(&self) -> u64 {
-        self[UNW_REG_IP]
-    }
-
-    /// Get the value of the SP (Stack Pointer) register.
-    #[inline]
-    pub fn sp(&self) -> u64 {
-        self[UNW_REG_SP]
-    }
-
-    #[inline]
-    pub fn valid_register(&self, n: usize) -> bool {
+    pub fn valid_register(n: usize) -> bool {
         if n == UNW_REG_IP || n == UNW_REG_SP {
             return true;
         }
-        if n > UNW_X86_64_MAX_REG_NUM {
+        if n > 15 {
             return false;
         }
         true
+    }
+
+    #[inline]
+    pub fn valid_float_register(_n: usize) -> bool {
+        false
+    }
+
+    #[inline]
+    pub fn valid_vector_register(_n: usize) -> bool {
+        false
     }
 
     #[inline]
@@ -211,11 +211,6 @@ impl Registers {
     }
 
     #[inline]
-    pub fn valid_float_register(&self, _n: usize) -> bool {
-        false
-    }
-
-    #[inline]
     pub fn vector_register(&self, _n: usize) -> bool {
         unreachable!();
     }
@@ -225,8 +220,15 @@ impl Registers {
         unreachable!();
     }
 
+    /// Get the value of the PC (Program Counter) register.
     #[inline]
-    pub fn valid_vector_register(&self, _n: usize) -> bool {
-        false
+    pub fn pc(&self) -> u64 {
+        self[UNW_REG_IP]
+    }
+
+    /// Get the value of the SP (Stack Pointer) register.
+    #[inline]
+    pub fn sp(&self) -> u64 {
+        self[UNW_REG_SP]
     }
 }

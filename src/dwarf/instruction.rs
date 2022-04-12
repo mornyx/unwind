@@ -59,7 +59,11 @@ impl Default for PrologInfo {
 impl PrologInfo {
     pub fn cfa(&self, registers: &Registers) -> Result<u64, DwarfError> {
         if self.cfa_register != 0 {
-            Ok((registers[self.cfa_register as usize] as i64 + self.cfa_register_offset as i64) as u64)
+            if Registers::valid_register(self.cfa_register as usize) {
+                Ok((registers[self.cfa_register as usize] as i64 + self.cfa_register_offset as i64) as u64)
+            } else {
+                Err(DwarfError::InvalidCfaRegisterNumber(self.cfa_register as usize))
+            }
         } else if self.cfa_expression != 0 {
             evaluate(self.cfa_expression as u64, registers, 0)
         } else {

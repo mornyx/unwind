@@ -40,6 +40,9 @@ pub enum DwarfError {
     #[error("invalid register number: {0}")]
     InvalidRegisterNumber(usize),
 
+    #[error("invalid cfa register number: {0}")]
+    InvalidCfaRegisterNumber(usize),
+
     #[error("invalid instruction: {0}")]
     InvalidInstruction(u8),
 
@@ -111,14 +114,14 @@ pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result
     let mut return_address = 0;
     for n in 0..=Registers::max_register_num() {
         if info.saved_registers[n].location != RegisterSavedWhere::Unused {
-            if registers.valid_float_register(n) {
+            if Registers::valid_float_register(n) {
                 new_registers.set_float_register(n, get_saved_float_register(registers, info.saved_registers[n], cfa)?);
-            } else if registers.valid_vector_register(n) {
+            } else if Registers::valid_vector_register(n) {
                 new_registers
                     .set_vector_register(n, get_saved_vector_register(registers, info.saved_registers[n], cfa)?);
             } else if n == cie.return_address_register as usize {
                 return_address = get_saved_register(registers, info.saved_registers[n], cfa)?;
-            } else if registers.valid_register(n) {
+            } else if Registers::valid_register(n) {
                 new_registers[n] = get_saved_register(registers, info.saved_registers[n], cfa)?;
             } else {
                 return Err(DwarfError::InvalidRegisterNumber(n));

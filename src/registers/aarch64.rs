@@ -50,6 +50,7 @@ impl Index<usize> for Registers {
     type Output = u64;
 
     fn index(&self, index: usize) -> &u64 {
+        assert!(Self::valid_register(index));
         match index {
             UNW_REG_IP | UNW_ARM64_PC => &self.pc,
             UNW_REG_SP | UNW_ARM64_SP => &self.sp,
@@ -64,6 +65,7 @@ impl Index<usize> for Registers {
 
 impl IndexMut<usize> for Registers {
     fn index_mut(&mut self, index: usize) -> &mut u64 {
+        assert!(Self::valid_register(index));
         match index {
             UNW_REG_IP | UNW_ARM64_PC => &mut self.pc,
             UNW_REG_SP | UNW_ARM64_SP => &mut self.sp,
@@ -126,20 +128,8 @@ impl Registers {
         UNW_ARM64_MAX_REG_NUM
     }
 
-    /// Get the value of the PC (Program Counter) register.
     #[inline]
-    pub fn pc(&self) -> u64 {
-        self[UNW_REG_IP]
-    }
-
-    /// Get the value of the SP (Stack Pointer) register.
-    #[inline]
-    pub fn sp(&self) -> u64 {
-        self[UNW_REG_SP]
-    }
-
-    #[inline]
-    pub fn valid_register(&self, n: usize) -> bool {
+    pub fn valid_register(n: usize) -> bool {
         if n == UNW_REG_IP || n == UNW_REG_SP {
             return true;
         }
@@ -156,24 +146,29 @@ impl Registers {
     }
 
     #[inline]
-    pub fn float_register(&self, n: usize) -> f64 {
-        assert!(self.valid_float_register(n));
-        self.d[n - UNW_ARM64_D0]
-    }
-
-    #[inline]
-    pub fn set_float_register(&mut self, n: usize, v: f64) {
-        assert!(self.valid_float_register(n));
-        self.d[n - UNW_ARM64_D0] = v;
-    }
-
-    #[inline]
-    pub fn valid_float_register(&self, n: usize) -> bool {
+    pub fn valid_float_register(n: usize) -> bool {
         if n >= UNW_ARM64_D0 && n <= UNW_ARM64_D31 {
             true
         } else {
             false
         }
+    }
+
+    #[inline]
+    pub fn valid_vector_register(_n: usize) -> bool {
+        false
+    }
+
+    #[inline]
+    pub fn float_register(&self, n: usize) -> f64 {
+        assert!(Self::valid_float_register(n));
+        self.d[n - UNW_ARM64_D0]
+    }
+
+    #[inline]
+    pub fn set_float_register(&mut self, n: usize, v: f64) {
+        assert!(Self::valid_float_register(n));
+        self.d[n - UNW_ARM64_D0] = v;
     }
 
     #[inline]
@@ -186,8 +181,15 @@ impl Registers {
         unreachable!();
     }
 
+    /// Get the value of the PC (Program Counter) register.
     #[inline]
-    pub fn valid_vector_register(&self, _n: usize) -> bool {
-        false
+    pub fn pc(&self) -> u64 {
+        self[UNW_REG_IP]
+    }
+
+    /// Get the value of the SP (Stack Pointer) register.
+    #[inline]
+    pub fn sp(&self) -> u64 {
+        self[UNW_REG_SP]
     }
 }
