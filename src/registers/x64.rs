@@ -184,7 +184,8 @@ impl Registers {
         if n == UNW_REG_IP || n == UNW_REG_SP {
             return true;
         }
-        if n > 15 {
+        if n > 16 {
+            // n > UNW_X86_64_RIP
             return false;
         }
         true
