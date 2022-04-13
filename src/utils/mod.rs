@@ -1,6 +1,6 @@
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "mem-protect"))]
 mod maps;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", feature = "mem-protect"))]
 pub use maps::*;
 
 /// [start, end)
@@ -13,7 +13,10 @@ pub struct AddressRange {
 impl AddressRange {
     /// Determine whether the target address is in the current range.
     #[inline]
-    #[cfg_attr(all(target_os = "macos", target_arch = "aarch64"), allow(unused))]
+    #[cfg_attr(
+        any(all(target_os = "macos", target_arch = "aarch64"), not(feature = "mem-protect")),
+        allow(unused)
+    )]
     pub fn contains(&self, target: u64) -> bool {
         self.start <= target && target < self.end
     }

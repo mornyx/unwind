@@ -2,7 +2,9 @@ use crate::dyld::SectionInfo;
 #[cfg(target_arch = "aarch64")]
 use crate::registers::UNW_ARM64_RA_SIGN_STATE;
 use crate::registers::{Registers, UNW_REG_IP, UNW_REG_SP};
-use crate::utils::{address_is_readable, load};
+#[cfg(feature = "mem-protect")]
+use crate::utils::address_is_readable;
+use crate::utils::load;
 use cfi::{CommonInformationEntry, FrameDescriptionEntry};
 use header::EhFrameHeader;
 use instruction::{get_saved_float_register, get_saved_register, get_saved_vector_register, RegisterSavedWhere};
@@ -177,10 +179,17 @@ fn search_fde(pc: u64, s: &SectionInfo) -> Result<(FrameDescriptionEntry, Common
 }
 
 #[inline]
+#[cfg(feature = "mem-protect")]
 fn load_with_protect<T: Copy>(address: u64) -> Result<T, DwarfError> {
     if address_is_readable(address) {
         Ok(load(address))
     } else {
         Err(DwarfError::UnreadableAddress(address))
     }
+}
+
+#[inline(always)]
+#[cfg(not(feature = "mem-protect"))]
+fn load_with_protect<T: Copy>(address: u64) -> Result<T, DwarfError> {
+    Ok(load(address))
 }

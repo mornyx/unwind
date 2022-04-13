@@ -96,7 +96,7 @@ pub fn trace<F>(mut f: F) -> Result<bool>
 where
     F: FnMut(&Registers) -> bool,
 {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "mem-protect"))]
     utils::update_thread_maps().map_err(|err| Error::ReadMaps(err))?;
 
     let mut registers = Registers::default();
@@ -123,7 +123,7 @@ pub fn trace_from_ucontext<F>(ucontext: *mut libc::c_void, mut f: F) -> Result<b
 where
     F: FnMut(&Registers) -> bool,
 {
-    #[cfg(target_os = "linux")]
+    #[cfg(all(target_os = "linux", feature = "mem-protect"))]
     utils::update_thread_maps().map_err(|err| Error::ReadMaps(err))?;
 
     if let Some(mut registers) = Registers::from_ucontext(ucontext) {
