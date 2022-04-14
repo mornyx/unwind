@@ -95,6 +95,9 @@ pub enum DwarfError {
 
     #[error("no way to calculate cfa")]
     NoWayToCalculateCfa,
+
+    #[error("dwarf expression not implemented")]
+    DwarfExpressionNotImplemented,
 }
 
 pub fn step(pc: u64, section: &SectionInfo, registers: &mut Registers) -> Result<(), DwarfError> {
