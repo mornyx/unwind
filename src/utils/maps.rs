@@ -1,7 +1,6 @@
 use crate::utils::AddressRange;
 use byteorder::ReadBytesExt;
 use smallvec::SmallVec;
-use std::cell::RefCell;
 use std::ffi::CStr;
 use std::fs::File;
 use std::io;
@@ -11,22 +10,13 @@ const MAX_MAPS_LEN: usize = 256;
 const READ_BUFFER_SIZE: usize = 1024;
 
 thread_local! {
-    static MAPS: RefCell<SmallVec<[AddressRange; MAX_MAPS_LEN]>> = {
-        RefCell::new(MapsReader::open().unwrap().read_maps().unwrap())
-    };
-}
-
-pub fn update_thread_maps() -> io::Result<()> {
-    MAPS.with(|maps| {
-        maps.replace(MapsReader::open()?.read_maps()?);
-        Ok(())
-    })
+    static MAPS: SmallVec<[AddressRange; MAX_MAPS_LEN]> = MapsReader::open().unwrap().read_maps().unwrap();
 }
 
 /// Determine whether the target address is readable.
 pub fn address_is_readable(target: u64) -> bool {
     MAPS.with(|maps| {
-        for m in maps.borrow().iter() {
+        for m in maps {
             if m.contains(target) {
                 return true;
             }

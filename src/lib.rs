@@ -96,9 +96,6 @@ pub fn trace<F>(mut f: F) -> Result<bool>
 where
     F: FnMut(&Registers) -> bool,
 {
-    #[cfg(all(target_os = "linux", feature = "mem-protect"))]
-    utils::update_thread_maps().map_err(|err| Error::ReadMaps(err))?;
-
     let mut registers = Registers::default();
     unsafe {
         unwind_init_registers(&mut registers as _);
@@ -123,9 +120,6 @@ pub fn trace_from_ucontext<F>(ucontext: *mut libc::c_void, mut f: F) -> Result<b
 where
     F: FnMut(&Registers) -> bool,
 {
-    #[cfg(all(target_os = "linux", feature = "mem-protect"))]
-    utils::update_thread_maps().map_err(|err| Error::ReadMaps(err))?;
-
     if let Some(mut registers) = Registers::from_ucontext(ucontext) {
         // Since our backtracking starts from ucontext, we need to
         // call `f` once before `step`.
