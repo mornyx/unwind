@@ -51,12 +51,23 @@ extern "C" fn callback(info: *mut libc::dl_phdr_info, _size: libc::size_t, data:
         if (*info).dlpi_phnum == 0 {
             return 0;
         }
-        if let Ok(name) = std::ffi::CStr::from_ptr((*info).dlpi_name).to_str() {
-            // After testing, it was found that there is currently no .eh_frame data
-            // available on aarch64 for linux-vdso.so. So we just skip it for now.
-            if name.contains("linux-vdso.so") {
-                return 0;
+        match std::ffi::CStr::from_ptr((*info).dlpi_name).to_str() {
+            Ok(name) => {
+                // If `trace-shared-libs` is not enabled, only functions in the current
+                // executable are traced. (The `dlpi_name` of the current executable is
+                // an empty string)
+                #[cfg(not(feature = "trace-shared-libs"))]
+                if name != "" {
+                    return 0;
+                }
+                // After testing, it was found that there is currently no .eh_frame data
+                // available on aarch64 for linux-vdso.so. So we just skip it for now.
+                #[cfg(feature = "trace-shared-libs")]
+                if name.contains("linux-vdso.so") {
+                    return 0;
+                }
             }
+            Err(_) => return 0,
         }
         let mut section = SectionInfo::default();
         section.base = (*info).dlpi_addr;

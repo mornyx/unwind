@@ -1,3 +1,4 @@
+- Make utils/maps stable
 - Add more tests for dwarf/*
 - Add more comments
 - Add fde cache to improve performance on Linux
