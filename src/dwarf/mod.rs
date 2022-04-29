@@ -3,7 +3,7 @@ use crate::dyld::SectionInfo;
 use crate::registers::UNW_ARM64_RA_SIGN_STATE;
 use crate::registers::{Registers, UNW_REG_IP, UNW_REG_SP};
 #[cfg(feature = "mem-protect")]
-use crate::utils::address_is_readable;
+use crate::utils::can_access;
 use crate::utils::load;
 use cfi::{CommonInformationEntry, FrameDescriptionEntry};
 use header::EhFrameHeader;
@@ -184,7 +184,7 @@ fn search_fde(pc: u64, s: &SectionInfo) -> Result<(FrameDescriptionEntry, Common
 #[inline]
 #[cfg(feature = "mem-protect")]
 fn load_with_protect<T: Copy>(address: u64) -> Result<T, DwarfError> {
-    if address_is_readable(address) {
+    if can_access(address) {
         Ok(load(address))
     } else {
         Err(DwarfError::UnreadableAddress(address))

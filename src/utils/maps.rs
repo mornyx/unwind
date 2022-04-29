@@ -1,3 +1,5 @@
+//! Deprecated
+
 use crate::utils::AddressRange;
 use byteorder::ReadBytesExt;
 use smallvec::SmallVec;

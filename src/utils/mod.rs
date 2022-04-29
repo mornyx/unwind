@@ -1,7 +1,7 @@
-#[cfg(all(target_os = "linux", feature = "mem-protect"))]
-mod maps;
-#[cfg(all(target_os = "linux", feature = "mem-protect"))]
-pub use maps::*;
+#[cfg(feature = "mem-protect")]
+mod access_check;
+#[cfg(feature = "mem-protect")]
+pub use access_check::*;
 
 /// [start, end)
 #[derive(Debug, Copy, Clone)]
